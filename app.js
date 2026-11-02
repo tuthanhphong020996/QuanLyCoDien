@@ -338,7 +338,7 @@ tailwind.config = {
                     <div class="flex justify-end gap-1.5 pt-1 border-t border-slate-100">
                         <div class="mr-auto text-xs text-slate-500">
                             <i class="fa-regular fa-clock mr-1"></i>
-                            Kiểm tra gần nhất: <span class="font-semibold text-slate-700">${latest.InspectionDate || 'Chưa kiểm tra'}</span>
+                            Kiểm tra gần nhất: <span class="font-semibold text-slate-700">${latest.inspectionDate || 'Chưa kiểm tra'}</span>
                         </div>
                         ${inps.length > 0 ? `
                             <button onclick="openInspectionHistoryModal(${d.id})" class="text-blue-600 hover:text-blue-800 font-semibold px-2 py-1">
