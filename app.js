@@ -775,7 +775,7 @@ async function scanBarcode() {
                 html5QrCode.clear();
 
                 document.getElementById("reader").style.display = "none";
-                 openInspectionHistoryModal(6);
+                 openInspectionHistoryModal(parseInt(decodedText, 10));
 
             }
         );
