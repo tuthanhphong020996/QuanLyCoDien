@@ -775,6 +775,8 @@ async function scanBarcode() {
                 html5QrCode.clear();
 
                 document.getElementById("reader").style.display = "none";
+                 openInspectionHistoryModal(6);
+
             }
         );
     } catch (err) {
