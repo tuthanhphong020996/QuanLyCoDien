@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Cơ Điện</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="app.js"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            font-size: 1rem;
+        }
+
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .bg-brand-500 { background-color: #05985C !important; }
+        .bg-brand-600 { background-color: #047d4c !important; }
+        .bg-brand-700 { background-color: #03633c !important; }
+        .text-brand-500 { color: #05985C !important; }
+        .border-brand-500 { border-color: #05985C !important; }
+    </style>
+</head>
+<body class="bg-slate-100 antialiased selection:bg-brand-500 selection:text-white">
+
+<div class="h-screen flex flex-col overflow-hidden w-full min-h-screen bg-slate-50 shadow-2xl relative md:my-0 border-x md:border border-slate-200 mx-auto text-base">
+    <!-- HEADER --> 
+    <header class="shrink-0 bg-white border-b shadow-sm flex justify-between items-center z-20 px-3 py-2">
+        <div class="flex items-center gap-3">
+            <button id="btn-back" class="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors" title="Quay lại">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+            </button>
+            <h1 class="text-lg font-bold text-[#05985C] uppercase tracking-wide">QUẢN LÝ CƠ ĐIỆN</h1>
+        </div>
+        <div class="flex items-center gap-2 text-base">
+            <i class="fa-solid fa-circle-user text-[#05985C] text-lg"></i>
+            <span id="user-display"><strong>NV001 - Nguyễn Văn A</strong></span>
+        </div>
+    </header>
+
+    <!-- THANH ĐIỀU HƯỚNG TABS -->
+    <nav class="bg-white border-b border-slate-200 shrink-0 shadow-xs">
+        <div class="p-1 border-t border-slate-100">
+            <div class="grid grid-cols-3 gap-1 p-0.5 bg-slate-100/80 rounded-lg border border-slate-200/70 w-full">
+                <!-- CỘT 1: Kế Hoạch -->
+                <button id="nav-btn-tasks" onclick="switchTab(1)"
+                        class="p-1.5 rounded-lg font-extrabold text-sm transition-all flex items-center justify-center gap-2 bg-brand-500 text-white shadow-xs">
+                    <span class="truncate">Kế Hoạch</span>
+                    <span id="plan-badge-count" class="px-1.5 py-0.2 rounded-full font-bold bg-blue-700/80 text-white shrink-0 text-xs">8</span>
+                </button>
+
+                <!-- CỘT 2: Thiết Bị -->
+                <button id="nav-btn-equipments" onclick="switchTab(2)"
+                        class="p-1.5 rounded-lg font-extrabold text-sm transition-all flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900">
+                    <span class="truncate">Thiết Bị</span>
+                    <span id="eq-badge-count" class="px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 shrink-0 text-xs">6</span>
+                </button>
+
+                <!-- CỘT 3: Báo Cáo Ca Trực -->
+                <button id="nav-btn-reports" onclick="switchTab(4)"
+                        class="group relative flex items-center justify-center gap-1 p-1.5 rounded-md font-medium text-amber-700 hover:text-amber-800 hover:bg-amber-100/60 border border-transparent hover:border-amber-200 transition-all text-sm w-full">
+                    <span class="truncate font-bold">Báo Cáo</span>
+                    <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- KHUNG XEM TRƯỚC NỘI DUNG -->
+    <main class="flex-1 min-h-0 flex flex-col p-2 hide-scrollbar text-base">
+
+        <!-- TAB 1: KẾ HOẠCH & CHECKLIST -->
+        <div id="tab-1-content" class="flex-1 min-h-0 flex flex-col space-y-2">
+            <div class="flex flex-col gap-1 shrink-0">
+                <section class="bg-white border border-slate-200/90 rounded-lg sm:rounded-xl p-2 shadow-2xs space-y-1.5">
+                    <div id="panel-collapsible-body" class="transition-all duration-200">
+                        <div class="grid grid-cols-3 gap-2">
+                            <!-- Kế hoạch -->
+                            <div class="min-w-0 flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2 py-1.5 shadow-sm">
+                                <div class="min-w-0 flex-1">
+                                    <div class="font-bold uppercase tracking-wider text-xs text-slate-500">Kế hoạch</div>
+                                    <div class="flex items-baseline gap-1">
+                                        <span id="stat-total-tasks" class="leading-6 font-extrabold text-base text-slate-800">0</span>
+                                        <span class="font-medium text-xs text-slate-500">thiết bị</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Đã kiểm tra -->
+                            <div class="min-w-0 bg-white border border-slate-200 rounded-lg px-2 py-1.5 shadow-sm flex flex-col justify-between">
+                                <div>
+                                    <div class="font-bold uppercase tracking-wider text-xs text-slate-500">Đã kiểm</div>
+                                    <div class="flex items-baseline gap-2">
+                                        <span id="stat-inspected-equipments" class="leading-6 font-extrabold text-base text-slate-800">0/0</span>
+                                        <span id="stat-inspect-percent" class="font-bold text-emerald-600 text-xs">0%</span>
+                                    </div>
+                                </div>
+                                <div class="text-xs">
+                                    Còn <b id="stat-remain-equipments" class="font-bold text-amber-600">0</b> thiết bị
+                                </div>
+                            </div>
+
+                            <!-- Tình trạng thiết bị -->
+                            <div class="min-w-0 flex flex-col gap-1">
+                                <div class="flex-1 min-w-0 flex items-center bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-0.5">
+                                    <div class="font-semibold text-emerald-700 text-xs">
+                                        Đạt: <span id="stat-normal-equipments" class="font-extrabold text-sm ml-1 text-emerald-800">0</span>
+                                    </div>
+                                </div>
+                                <div class="flex-1 min-w-0 flex items-center bg-rose-50 border border-rose-100 rounded-lg px-2 py-0.5">
+                                    <div class="font-semibold text-rose-700 text-xs">
+                                        Lỗi: <span id="stat-issue-equipments" class="font-extrabold text-sm ml-1 text-rose-800">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TOOLBAR BỘ LỌC TAB 1 -->
+                <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-1.5">
+                    <div class="grid grid-cols-3 gap-1.5 w-full">
+                        <div class="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded px-1 py-1 min-w-0">
+                            <input type="date" id="filter-date" onchange="filterPlan('date', this.value)" class="w-full min-w-0 bg-transparent font-semibold text-xs text-slate-800 focus:outline-none">
+                        </div>
+
+                        <select id="filter-workshop" onchange="filterPlan('comp', this.value)" class="w-full min-w-0 border border-slate-300 rounded px-1 py-1 text-xs bg-slate-50 focus:outline-none">
+                            <option value="ALL">Tất cả Phân xưởng</option>
+                            <option value="Gỗ 1">Gỗ 1</option>
+                            <option value="Gỗ 2">Gỗ 2</option>
+                            <option value="Sắt">Sắt</option>
+                            <option value="Nệm">Nệm</option>
+                        </select>
+
+                        <select id="filter-status" onchange="filterPlan('status', this.value)" class="w-full min-w-0 border border-slate-300 rounded px-1 py-1 text-xs bg-slate-50 focus:outline-none">
+                            <option value="ALL">Tất cả Trạng thái</option>
+                            <option value="PENDING">Chờ kiểm tra</option>
+                            <option value="PASS">Đã Đạt</option>
+                            <option value="FAIL">Lỗi / Hỏng</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center bg-slate-100 p-0.5 rounded border border-slate-200 shrink-0 text-xs">
+                        <button id="quick-filter-all" onclick="filterPlan('assignall', 'all')" class="px-2 py-1 rounded font-semibold bg-white text-blue-700 shadow-2xs">Tất cả</button>
+                        <button id="quick-filter-mine" onclick="filterPlan('assign', 'ASSIGNED')" class="px-2 py-1 rounded font-medium text-slate-600 hover:text-slate-900">👤 Của tôi</button>
+                        <button id="quick-filter-unassigned" onclick="filterPlan('unassign', 'UNASSIGNED')" class="px-2 py-1 rounded font-medium text-slate-600 hover:text-slate-900">🚨 Chưa nhận</button>
+                    </div>
+
+                    <input type="text" id="eq-filter-search" oninput="filterPlan('search', this.value)" placeholder="Tìm tên máy, mã, vị trí..." class="flex-1 w-0 min-w-0 px-2 py-1 border border-slate-300 rounded text-xs bg-slate-50 focus:outline-none" />
+                </div>
+            </div>
+
+            <!-- DANH SÁCH PLAN -->
+            <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-8 [scrollbar-gutter:stable]">
+                <!-- Mobile list view -->
+                <div id="task-mobile-list" class="space-y-2 md:hidden"></div>
+                <!-- Desktop table view -->
+                <div class="hidden md:block bg-white rounded-lg border border-slate-200 shadow-2xs overflow-hidden">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-200 border-b border-slate-200 font-semibold text-slate-700">
+                                <th class="py-2.5 px-3">Thiết Bị Cần Kiểm</th>
+                                <th class="py-2.5 px-3 w-[20%]">Người Phụ Trách</th>
+                                <th class="py-2.5 px-3 w-[20%]">Tiến Độ Checklist</th>
+                                <th class="py-2.5 px-3 w-[10%] text-center">Kết Quả</th>
+                                <th class="py-2.5 px-3 w-[20%] text-right">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="task-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: QUẢN LÝ THIẾT BỊ -->
+        <div id="tab-2-content" class="hidden flex-1 min-h-0 flex flex-col space-y-2">
+            <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-1.5">
+                <div class="flex flex-wrap items-center gap-1.5 w-full sm:w-auto text-xs">
+                    <input type="text" id="eq2-filter-search" oninput="renderEquipmentTab()" placeholder="Tìm tên máy, mã, vị trí..." class="px-2 py-1 border border-slate-300 rounded bg-slate-50 w-full sm:w-48 focus:outline-none">
+                     <button onclick="scanBarcode()" class="bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-bold text-sm rounded-xl shadow-xs flex items-center gap-2">
+                        <i class="fa-solid fa-qrcode text-base"></i>
+                        <span>Quét QR</span>
+                    </button>
+                    <select id="eq2-filter-comp" onchange="renderEquipmentTab()" class="border border-slate-300 rounded px-2 py-1 bg-slate-50 focus:outline-none">
+                        <option value="ALL">Mọi phân xưởng</option>
+                        <option value="Gỗ 1">Gỗ 1</option>
+                        <option value="Gỗ 2">Gỗ 2</option>
+                        <option value="Sắt">Sắt</option>
+                        <option value="Nệm">Nệm</option>
+                    </select>
+                </div>
+
+                <button onclick="openDeviceModal()" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-900 text-white font-semibold flex items-center gap-1 shadow-2xs text-xs transition">
+                    <span>+</span> <span>Thêm Thiết Bị</span>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-auto space-y-2">
+                <div id="equipment-mobile-list" class="space-y-2 md:hidden"></div>
+                <div class="hidden md:block bg-white rounded-lg border border-slate-200 shadow-2xs overflow-hidden">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-200 border-b border-slate-200 font-semibold text-slate-700">
+                                <th class="py-2 px-2.5 w-12">STT</th>
+                                <th class="py-2 px-2.5">Tên Thiết Bị</th>
+                                <th class="py-2 px-2.5 w-32">Xưởng</th>
+                                <th class="py-2 px-2.5 w-32">Tình Trạng</th>
+                                <th class="py-2 px-2.5 w-36">Bảo trì gần nhất</th>
+                                <th class="py-2 px-2.5 w-36">Chu kỳ</th>
+                                <th class="py-2 px-2.5 text-right w-52">Hành Động</th>
+                            </tr>
+                        </thead>
+                        <tbody id="equipment-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: BÁO CÁO CA TRỰC -->
+        <div id="tab-4-content" class="hidden flex-1 min-h-0 flex flex-col space-y-2">
+            <div class="flex-1 overflow-auto space-y-3">
+                <div class="flex items-center justify-between border-b pb-2">
+                    <div>
+                        <h1 class="text-lg font-bold text-slate-900 uppercase">Trạng Thái Thiết Bị Cơ Điện</h1>
+                        <p class="text-xs text-slate-500 mt-0.5">Thời điểm: Ca 1 - Hôm nay | Kỹ thuật viên trực ca</p>
+                    </div>
+                    <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition text-xs font-semibold">
+                        <i class="fa-solid fa-print"></i> In / Xuất PDF
+                    </button>
+                </div>
+
+                <!-- CARDS THỐNG KÊ -->
+                <div class="grid grid-cols-3 gap-2">
+                    <div id="card-all" onclick="filterDeviceOnReport('status', 'ALL')" class="p-2 bg-slate-50 rounded-lg border-2 border-slate-300 text-center cursor-pointer">
+                        <span class="block text-slate-500 font-medium uppercase text-xs">Tổng thiết bị</span>
+                        <span class="block text-base font-black text-slate-800 leading-5" id="count-all">0</span>
+                        <span class="block text-slate-400 text-xs">Xem tất cả</span>
+                    </div>
+
+                    <div id="card-good" onclick="filterDeviceOnReport('status', 'good')" class="p-2 bg-emerald-50 rounded-lg border-2 border-transparent text-center cursor-pointer">
+                        <span class="flex items-center justify-center gap-1 text-emerald-700 font-medium uppercase text-xs">
+                            <i class="fa-solid fa-circle text-[7px] text-emerald-500"></i> Đạt
+                        </span>
+                        <span class="block text-base font-black text-emerald-600 leading-5" id="count-good">0</span>
+                        <span class="block text-emerald-700 font-semibold text-xs" id="pct-good">0%</span>
+                    </div>
+
+                    <div id="card-error" onclick="filterDeviceOnReport('status', 'error')" class="p-2 bg-rose-50 rounded-lg border-2 border-transparent text-center cursor-pointer">
+                        <span class="flex items-center justify-center gap-1 text-rose-700 font-medium uppercase text-xs">
+                            <i class="fa-solid fa-circle text-[7px] text-rose-500"></i> Lỗi
+                        </span>
+                        <span class="block text-base font-black text-rose-600 leading-5" id="count-error">0</span>
+                        <span class="block text-rose-700 font-semibold text-xs" id="pct-error">0%</span>
+                    </div>
+                </div>
+
+                <!-- THANH LỌC BÁO CÁO -->
+                <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200 text-xs">
+                    <div class="flex items-center gap-1 flex-wrap">
+                        <span class="text-slate-500 font-medium mr-1">Lọc nhanh:</span>
+                        <button id="rep-btn-all" onclick="filterDeviceOnReport('status', 'ALL')" class="px-2 py-1 rounded bg-slate-800 text-white font-medium">Tất cả (<span id="btn-count-all">0</span>)</button>
+                        <button id="rep-btn-good" onclick="filterDeviceOnReport('status', 'good')" class="px-2 py-1 rounded bg-white text-emerald-700 border border-emerald-300 font-medium">Đạt (<span id="btn-count-good">0</span>)</button>
+                        <button id="rep-btn-error" onclick="filterDeviceOnReport('status', 'error')" class="px-2 py-1 rounded bg-white text-rose-700 border border-rose-300 font-medium">Lỗi (<span id="btn-count-error">0</span>)</button>
+
+                        <select id="report-filter-workshop" onchange="filterDeviceOnReport('comp', this.value)" class="border border-slate-300 rounded px-1 py-1 bg-slate-50 focus:outline-none">
+                            <option value="ALL">Tất cả Phân xưởng</option>
+                            <option value="2">2 - Gỗ 1</option>
+                            <option value="3">3 - Gỗ 2</option>
+                            <option value="20">20 - Sắt</option>
+                            <option value="1">1 - Nệm</option>
+                        </select>
+                    </div>
+
+                    <div class="relative w-full sm:w-48">
+                        <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-slate-400"></i>
+                        <input type="text" id="report-search-input" oninput="filterDeviceOnReport('search', this.value)" placeholder="Tìm mã hoặc tên máy..." class="w-full pl-7 pr-2 py-1 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:border-slate-500">
+                    </div>
+                </div>
+
+                <!-- BẢNG BÁO CÁO -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <h2 class="font-bold uppercase text-slate-700 text-xs">Chi tiết tình trạng từng máy (<span id="report-visible-count">0</span> thiết bị)</h2>
+                    </div>
+
+                    <div class="overflow-hidden border border-slate-200 rounded-lg bg-white">
+                        <table class="w-full text-left border-collapse text-xs sm:text-sm">
+                            <thead class="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
+                                <tr>
+                                    <th class="p-2">STT</th>
+                                    <th class="p-2">Mã</th>
+                                    <th class="p-2">Tên thiết bị</th>
+                                    <th class="p-2">Phân xưởng</th>
+                                    <th class="p-2 text-center">Trạng thái</th>
+                                    <th class="p-2">Ghi chú</th>
+                                </tr>
+                            </thead>
+                            <tbody id="report-table-body" class="divide-y divide-slate-200 text-slate-700"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs sm:text-sm">
+                    <span class="font-bold text-slate-700 block mb-1">Hành động khắc phục trong ca:</span>
+                    <p class="text-slate-600" id="report-summary-text">• Theo dõi chặt chẽ thiết bị phát sinh lỗi, cập nhật phiếu bảo dưỡng kịp thời.</p>
+                </div>
+            </div>
+        </div>
+        <div id="reader" style="width: 100%; display: none;"></div>
+    </main>
+
+    <!-- ======================================================== -->
+    <!-- MODAL 1: GHI NHẬN SỐ ĐO & CHECKLIST HIỆN TRƯỜNG            -->
+    <!-- ======================================================== -->
+    <div id="modal-inspection" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="w-full max-w-xl bg-white rounded-t-2xl sm:rounded-2xl p-3 shadow-2xl max-h-[92vh] flex flex-col text-sm relative space-y-2">
+            <div class="px-2 py-1.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between rounded-t-xl">
+                <div>
+                    <p class="font-bold text-base text-slate-900" id="modal-inp-device-title">TB-01 - Tên thiết bị</p>
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-blue-600 block" id="modal-inp-comp">Xưởng gỗ</span>
+                </div>
+                <button type="button" onclick="closeInspectionModal()" class="text-slate-400 hover:text-slate-600 font-bold text-2xl leading-none">&times;</button>
+            </div>
+
+            <div class="space-y-3 text-xs overflow-y-auto hide-scrollbar flex-1 p-1">
+                <div class="grid grid-cols-4 items-center bg-slate-50 px-2 py-2 rounded-lg border border-slate-200 gap-2">
+                    <div class="col-span-4 sm:col-span-3 flex flex-col gap-1.5">
+                        <div class="flex items-center gap-1">
+                            <span class="text-slate-600">Người kiểm tra:</span>
+                            <strong class="text-blue-700 font-semibold" id="modal-inp-emp">NV001</strong>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <label class="shrink-0 text-slate-600">Ngày kiểm:</label>
+                            <input type="date" id="modal-inp-date" class="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-blue-700 font-semibold focus:outline-none" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-1.5">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-slate-700 uppercase" id="modal-inp-checklist-title">Tiêu chí kiểm tra</span>
+                    </div>
+
+                    <div class="max-h-[260px] overflow-y-auto border border-slate-200 rounded">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="bg-slate-200 font-semibold uppercase text-slate-700 sticky top-0">
+                                <tr>
+                                    <th class="px-1 py-1 text-center w-8">STT</th>
+                                    <th class="px-2 py-1">Nội dung</th>
+                                    <th class="px-2 py-1 w-28 text-center">Đánh Giá</th>
+                                    <th class="px-2 py-1 w-36">Ghi chú</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modal-inp-checklist-body" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1 text-xs">Ghi chú sự cố tổng hợp:</label>
+                    <textarea id="modal-inp-notes" rows="2" placeholder="Ghi nhận thêm thông tin về tình trạng máy..." class="w-full border border-slate-300 rounded-lg p-2 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"></textarea>
+                </div>
+            </div>
+
+            <div class="px-3 py-2 border-t border-slate-200 bg-slate-50 flex items-center justify-between rounded-b-xl">
+                <button type="button" onclick="closeInspectionModal()" class="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs">Hủy</button>
+                <button type="button" onclick="saveInspectionResult()" class="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm">Lưu Kết Quả</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- MODAL 2: XEM LỊCH SỬ KIỂM TRA                           -->
+    <!-- ======================================================== -->
+    <div id="modal-history" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="w-full max-w-xl bg-white rounded-t-2xl sm:rounded-2xl p-3 shadow-2xl max-h-[92vh] flex flex-col text-sm relative space-y-2">
+            <div class="px-2 py-1.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between rounded-t-xl">
+                <div>
+                    <p class="font-bold text-base text-slate-900" id="hist-modal-title">Lịch sử kiểm tra</p>
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-blue-600 block" id="hist-modal-comp">Xưởng</span>
+                </div>
+                <button type="button" onclick="closeInspectionHistoryModal()" class="text-slate-400 hover:text-slate-600 font-bold text-2xl leading-none">&times;</button>
+            </div>
+
+            <div class="space-y-3 overflow-y-auto hide-scrollbar flex-1 p-1">
+                <!-- Pills lần đo -->
+                <div class="flex items-center gap-1.5 overflow-x-auto hide-scrollbar py-1" id="hist-runs-pills"></div>
+
+                <!-- Info lần đo -->
+                <div class="grid grid-cols-2 items-center bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200 gap-2 text-xs">
+                    <div class="flex items-center gap-1">
+                        <i class="fa-solid fa-user text-slate-500"></i>
+                        <span class="text-slate-600">Người kiểm:</span>
+                        <strong class="text-blue-700 font-semibold" id="hist-emp-name">--</strong>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <i class="fa-solid fa-calendar-days text-slate-500"></i>
+                        <span class="text-slate-600">Thời gian:</span>
+                        <strong class="text-blue-700 font-semibold" id="hist-check-date">--</strong>
+                    </div>
+                </div>
+
+                <div class="space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="font-bold text-slate-700 uppercase" id="hist-details-summary">Tiêu chí kiểm tra</span>
+                    </div>
+
+                    <div class="max-h-[250px] overflow-y-auto border border-slate-200 rounded">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="bg-slate-200 font-semibold uppercase text-slate-700 sticky top-0">
+                                <tr>
+                                    <th class="px-1 py-1 text-center w-8">STT</th>
+                                    <th class="px-2 py-1">Nội dung</th>
+                                    <th class="px-2 py-1 w-20 text-center">Đánh Giá</th>
+                                    <th class="px-2 py-1">Ghi chú</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hist-table-body" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                    <span class="font-semibold text-slate-700 block mb-0.5">Ghi chú chung:</span>
+                    <div class="text-slate-600 italic" id="hist-notes">Không có ghi chú</div>
+                </div>
+            </div>
+
+            <div class="px-3 py-2 border-t border-slate-200 bg-slate-50 flex items-center justify-end rounded-b-xl">
+                <button type="button" onclick="closeInspectionHistoryModal()" class="px-4 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- MODAL 3: THÊM MỚI THIẾT BỊ                               -->
+    <!-- ======================================================== -->
+    <div id="modal-device" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="w-full max-w-xl bg-white rounded-t-2xl sm:rounded-2xl p-3 shadow-2xl flex flex-col text-sm relative space-y-3">
+            <div class="px-2 py-1.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between rounded-t-xl">
+                <p class="font-bold text-base uppercase text-slate-900">Thêm thiết bị mới</p>
+                <button type="button" onclick="closeDeviceModal()" class="text-slate-400 hover:text-slate-600 font-bold text-2xl leading-none">&times;</button>
+            </div>
+
+            <div class="space-y-3 text-xs p-1">
+                <div class="grid grid-cols-4 items-center gap-3">
+                    <label class="text-xs font-medium text-gray-700 text-right">Xưởng <span class="text-red-500">*</span>:</label>
+                    <div class="col-span-3">
+                        <select id="modal-device-comp" class="w-full border border-slate-300 rounded px-2 py-1 bg-slate-50 focus:outline-none">
+                            <option value="">-- Chọn Phân xưởng --</option>
+                            <option value="1">Nệm</option>
+                            <option value="2">Gỗ 1</option>
+                            <option value="3">Gỗ 2</option>
+                            <option value="20">Sắt</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-4 items-center gap-3">
+                    <label class="text-xs font-medium text-gray-700 text-right">Mã TB <span class="text-red-500">*</span>:</label>
+                    <div class="col-span-3">
+                        <input type="text" id="modal-device-code" placeholder="VD: TB-99" class="w-full border border-gray-300 rounded px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-4 items-center gap-3">
+                    <label class="text-xs font-medium text-gray-700 text-right">Tên TB <span class="text-red-500">*</span>:</label>
+                    <div class="col-span-3">
+                        <input type="text" id="modal-device-name" placeholder="VD: Máy phay mộng tự động" class="w-full border border-gray-300 rounded px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-4 items-center gap-3">
+                    <label class="text-xs font-medium text-gray-700 text-right">Checklist <span class="text-red-500">*</span>:</label>
+                    <div class="col-span-3">
+                        <select id="modal-device-checklist" class="w-full border border-slate-300 rounded px-2 py-1 bg-slate-50 focus:outline-none"></select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-3 py-2 border-t border-slate-200 bg-slate-50 flex items-center justify-between rounded-b-xl">
+                <button type="button" onclick="closeDeviceModal()" class="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs">Hủy</button>
+                <button type="button" onclick="saveChangesDevice()" class="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm">Lưu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toast" class="hidden fixed bottom-16 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2 text-xs sm:text-sm font-bold z-50 transition-all duration-300">
+        <i id="toast-icon" class="fa-solid fa-check text-emerald-400 text-base"></i>
+        <span id="toast-msg">Thông báo</span>
+    </div>
+</div>
+
+</body>
+</html>
