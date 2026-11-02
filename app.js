@@ -771,7 +771,7 @@ async function scanBarcode() {
             { facingMode: "environment" },
             {
                 fps: 10,
-                qrbox: { width: 250, height: 150 }
+                qrbox: { width: 250, height: 250 }
             },
             async (decodedText) => {
                 if (!isScanning) return;
