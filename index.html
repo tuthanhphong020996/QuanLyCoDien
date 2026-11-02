@@ -12,6 +12,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
+  <!-- Polyfill ES Module Shims cho iOS Safari & trình duyệt WebKit cũ hơn -->
+  <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+
   <!-- Three.js Import Map for robust ES Modules -->
   <script type="importmap">
     {
@@ -23,10 +26,24 @@
   </script>
 
   <style>
-    body {
-      font-family: 'Inter', sans-serif;
+    /* Tối ưu hóa toàn diện cảm ứng cho iOS WebKit */
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       user-select: none;
+      -webkit-user-select: none;
       overflow: hidden;
+      width: 100%;
+      height: 100%;
+      height: 100dvh; /* Dynamic Viewport Height chuẩn cho iOS Safari */
+    }
+    #canvas-container canvas {
+      touch-action: none; /* Ngăn chặn cử chỉ cuộn mặc định của iOS làm kẹt OrbitControls và Raycaster */
+    }
+    button, input, [role="button"] {
+      touch-action: manipulation;
     }
     .font-mono-code {
       font-family: 'JetBrains Mono', monospace;
@@ -595,8 +612,11 @@
 
       // 8. Event Listeners
       window.addEventListener('resize', onWindowResize);
-      container.addEventListener('pointermove', onPointerMove);
-      container.addEventListener('pointerdown', onPointerDown);
+      container.addEventListener('pointermove', onPointerMove, { passive: true });
+      container.addEventListener('pointerdown', onPointerDown, { passive: true });
+      container.addEventListener('pointerup', onPointerUp, { passive: true });
+      // Hỗ trợ touch trực tiếp cho các thiết bị iOS không phát sinh pointer click
+      container.addEventListener('touchend', onTouchEndIOS, { passive: false });
       container.addEventListener('click', onClickScene);
     }
 
@@ -947,17 +967,46 @@
     /* ==========================================================================
        8. QUẢN LÝ TƯƠNG TÁC CHUỘT VÀ RAYCASTER (INTERACTIONS & SELECTION)
        ========================================================================== */
-    let pointerDownPos = { x: 0, y: 0 };
+    let pointerDownPos = { x: 0, y: 0, time: 0 };
 
     function onPointerDown(event) {
       pointerDownPos.x = event.clientX;
       pointerDownPos.y = event.clientY;
+      pointerDownPos.time = Date.now();
+    }
+
+    function onPointerUp(event) {
+      // Hỗ trợ xử lý click ngay tại pointerup cho màn hình cảm ứng di động
+      const diffX = Math.abs(event.clientX - pointerDownPos.x);
+      const diffY = Math.abs(event.clientY - pointerDownPos.y);
+      const duration = Date.now() - pointerDownPos.time;
+      if (diffX <= 8 && diffY <= 8 && duration < 400) {
+        handleRaycastSelection(event.clientX, event.clientY);
+      }
+    }
+
+    function onTouchEndIOS(event) {
+      if (event.changedTouches && event.changedTouches.length === 1) {
+        const touch = event.changedTouches[0];
+        const diffX = Math.abs(touch.clientX - pointerDownPos.x);
+        const diffY = Math.abs(touch.clientY - pointerDownPos.y);
+        const duration = Date.now() - pointerDownPos.time;
+        if (diffX <= 12 && diffY <= 12 && duration < 450) {
+          event.preventDefault(); // Ngăn zoom kép giả lập của iOS
+          handleRaycastSelection(touch.clientX, touch.clientY);
+        }
+      }
     }
 
     function onPointerMove(event) {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      // Không hiện hover tooltip trên thiết bị màn hình cảm ứng để tránh vướng víu
+      if (window.matchMedia('(pointer: coarse)').matches) {
+        return;
+      }
 
       // Cập nhật vị trí Tooltip nổi khi hover
       const tooltip = document.getElementById('hover-tooltip');
@@ -1000,12 +1049,22 @@
     }
 
     function onClickScene(event) {
-      // Bỏ qua nếu là thao tác kéo xoay camera (Drag Orbit)
       const diffX = Math.abs(event.clientX - pointerDownPos.x);
       const diffY = Math.abs(event.clientY - pointerDownPos.y);
-      if (diffX > 4 || diffY > 4) return;
+      if (diffX > 8 || diffY > 8) return;
+      handleRaycastSelection(event.clientX, event.clientY);
+    }
 
-      raycaster.setFromCamera(mouse, camera);
+    // Hàm tập trung xử lý chọn đối tượng 3D tương thích cả Desktop và iOS Mobile
+    function handleRaycastSelection(clientX, clientY) {
+      if (!renderer || !camera) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const clickCoords = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+
+      raycaster.setFromCamera(clickCoords, camera);
       const intersects = raycaster.intersectObjects(scene.children, true);
 
       let selectedObject = null;
@@ -1021,7 +1080,7 @@
         if (selectedObject.type === 'CARTON') {
           selectCarton(selectedObject.cartonId, true);
         } else if (selectedObject.type === 'RACK' || selectedObject.type === 'RACK_FRAME' || selectedObject.type === 'BEAM' || selectedObject.type === 'SHELF') {
-          selectRack(selectedObject.rackId, selectedObject.levelNumber ? selectedObject.levelNumber - 1 : 0, false);
+          selectRack(selectedObject.rackId, selectedObject.levelNumber ? selectedObject.levelNumber - 1 : 0, false, true);
         }
       }
     }
