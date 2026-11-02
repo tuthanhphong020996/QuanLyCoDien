@@ -775,7 +775,6 @@ async function scanBarcode() {
                 html5QrCode.clear();
 
                 document.getElementById("reader").style.display = "none";
-                alert("Mã quét được: " + parseInt(decodedText, 10));
                  openInspectionHistoryModal(parseInt(decodedText, 10));
 
             }
