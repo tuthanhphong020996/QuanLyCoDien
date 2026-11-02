@@ -12,18 +12,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
-  <!-- Polyfill ES Module Shims cho iOS Safari & trình duyệt WebKit cũ hơn -->
-  <script async src="https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js"></script>
-
-  <!-- Three.js Import Map for robust ES Modules -->
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-      }
-    }
-  </script>
+  <!-- Nạp Three.js, OrbitControls & BufferGeometryUtils dạng Standalone Script (Tương thích 100% Safari/iOS, không lo lỗi importmap) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
 
   <style>
     /* Tối ưu hóa toàn diện cảm ứng cho iOS WebKit */
@@ -302,10 +294,25 @@
   </main>
 
   <!-- ================= THREE.JS & APPLICATION LOGIC ================= -->
-  <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+  <script>
+    // Sử dụng trực tiếp đối tượng THREE toàn cục, đảm bảo hoạt động trơn tru trên mọi phiên bản Safari iOS
+    const THREE_GLOBAL = window.THREE;
+    const OrbitControls = THREE.OrbitControls;
+    const BufferUtils = window.BufferGeometryUtils || (window.THREE && window.THREE.BufferGeometryUtils);
+
+    // Hàm helper gộp geometry an toàn tương thích mọi phiên bản Three.js (r128 UMD dùng mergeBufferGeometries)
+    function safeMergeGeometries(geometries) {
+      if (!geometries || geometries.length === 0) return null;
+      if (BufferUtils) {
+        if (typeof BufferUtils.mergeGeometries === 'function') {
+          return BufferUtils.mergeGeometries(geometries);
+        }
+        if (typeof BufferUtils.mergeBufferGeometries === 'function') {
+          return BufferUtils.mergeBufferGeometries(geometries);
+        }
+      }
+      return null;
+    }
 
     /* ==========================================================================
        1. CẤU HÌNH KÍCH THƯỚC VÀ HẰNG SỐ (DIMENSIONS & CONSTANTS)
@@ -454,9 +461,13 @@
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0xf1f5f9);
 
+      // Phòng ngừa trường hợp container chưa kịp tính clientWidth trên Safari
+      const width = container.clientWidth || window.innerWidth;
+      const height = container.clientHeight || (window.innerHeight - 56);
+
       camera = new THREE.PerspectiveCamera(
         45,
-        container.clientWidth / container.clientHeight,
+        width / height,
         0.5,
         300
       );
@@ -464,8 +475,8 @@
 
       // Tắt shadow map và khóa pixelRatio = 1.2 max để thiết bị mát mẻ, không giật lag
       renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "low-power" });
-      renderer.setSize(container.clientWidth, container.clientHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
       renderer.shadowMap.enabled = false; // Tắt shadow map nặng
       container.appendChild(renderer.domElement);
 
@@ -575,16 +586,34 @@
         orangeGeometries.push(bBeam);
       }
 
-      // GỘP MESH KHUNG: Từ hàng chục khối thành đúng 2 khối cực nhẹ!
-      const mergedBlue = BufferGeometryUtils.mergeGeometries(blueGeometries);
-      const blueMesh = new THREE.Mesh(mergedBlue, materials.steelBlue);
-      blueMesh.userData = { type: 'RACK_FRAME', rackId: rackData.id };
-      rackGroup.add(blueMesh);
+      // GỘP MESH KHUNG AN TOÀN: Tương thích cả mergeGeometries và mergeBufferGeometries
+      const mergedBlue = safeMergeGeometries(blueGeometries);
+      if (mergedBlue) {
+        const blueMesh = new THREE.Mesh(mergedBlue, materials.steelBlue);
+        blueMesh.userData = { type: 'RACK_FRAME', rackId: rackData.id };
+        rackGroup.add(blueMesh);
+      } else {
+        // Fallback nếu không có utils: Tạo mesh riêng lẻ
+        blueGeometries.forEach(geo => {
+          const m = new THREE.Mesh(geo, materials.steelBlue);
+          m.userData = { type: 'RACK_FRAME', rackId: rackData.id };
+          rackGroup.add(m);
+        });
+      }
 
-      const mergedOrange = BufferGeometryUtils.mergeGeometries(orangeGeometries);
-      const orangeMesh = new THREE.Mesh(mergedOrange, materials.beamOrange);
-      orangeMesh.userData = { type: 'RACK_FRAME', rackId: rackData.id };
-      rackGroup.add(orangeMesh);
+      const mergedOrange = safeMergeGeometries(orangeGeometries);
+      if (mergedOrange) {
+        const orangeMesh = new THREE.Mesh(mergedOrange, materials.beamOrange);
+        orangeMesh.userData = { type: 'RACK_FRAME', rackId: rackData.id };
+        rackGroup.add(orangeMesh);
+      } else {
+        // Fallback
+        orangeGeometries.forEach(geo => {
+          const m = new THREE.Mesh(geo, materials.beamOrange);
+          m.userData = { type: 'RACK_FRAME', rackId: rackData.id };
+          rackGroup.add(m);
+        });
+      }
 
       // Thêm Pallet và Hàng hóa (Tối ưu hóa hình học)
       rackData.levels.forEach((lvlData) => {
@@ -1197,9 +1226,11 @@
 
     function onWindowResize() {
       if (!renderer || !camera) return;
-      camera.aspect = container.clientWidth / container.clientHeight;
+      const width = container.clientWidth || window.innerWidth;
+      const height = container.clientHeight || (window.innerHeight - 56);
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setSize(width, height);
     }
 
     function animate() {
