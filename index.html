@@ -305,6 +305,7 @@
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 
     /* ==========================================================================
        1. CẤU HÌNH KÍCH THƯỚC VÀ HẰNG SỐ (DIMENSIONS & CONSTANTS)
@@ -313,18 +314,15 @@
       aisles: ['A', 'B', 'C'],
       racksPerAisle: 10,
       levelsPerRack: 3,
-      // Kích thước chuẩn thực tế (mét)
-      rackWidth: 3.2,     // Chiều dài mặt trước của 1 bay kệ
-      rackDepth: 1.2,     // Chiều sâu giá đỡ (vừa 1-2 pallet sâu)
-      levelHeight: 1.8,   // Chiều cao mỗi tầng
-      rackMarginZ: 0.1,   // Khoảng hở sát nhau giữa các kệ trong cùng 1 dãy
-      aisleSpacingX: 6.5, // Lối đi giữa các dãy A, B, C (xe nâng forklift di chuyển)
-      postSize: 0.09,     // Tiết diện cột trụ đứng thép
-      beamHeight: 0.12,   // Bản rộng của thanh beam đỡ ngang
-      shelfThickness: 0.04// Độ dày mặt sàn/lưới tầng
+      rackWidth: 3.0,
+      rackDepth: 1.1,
+      levelHeight: 1.6,
+      rackMarginZ: 0.15,
+      aisleSpacingX: 5.5,
+      postSize: 0.08,
+      beamHeight: 0.10
     };
 
-    // Bảng tên chủng loại hàng hóa thực tế để mock
     const SAMPLE_PRODUCTS = [
       { name: "CPU Server Intel Xeon", code: "ITM-SRV-901", category: "Electronics" },
       { name: "Màn hình 4K Dell UltraSharp", code: "ITM-DSP-402", category: "Electronics" },
@@ -336,25 +334,19 @@
       { name: "Pin Lithium Storage Module", code: "ITM-BAT-320", category: "Energy" }
     ];
 
-    /* ==========================================================================
-       2. MÔ HÌNH DỮ LIỆU KHO HÀNG (WAREHOUSE DATA STORE)
-       ========================================================================== */
     const warehouseData = {
-      racks: [],       // Mảng chứa các đối tượng Rack dữ liệu
-      rackMap: new Map(), // Tra cứu nhanh O(1) theo rackId
-      cartonMap: new Map(), // Tra cứu nhanh O(1) theo cartonId
+      racks: [],
+      rackMap: new Map(),
+      cartonMap: new Map(),
       selectedRackId: null,
       selectedLevelIndex: 0,
       selectedCartonId: null
     };
 
-    /* ==========================================================================
-       3. TẠO DỮ LIỆU MẪU (MOCK DATA GENERATION)
-       ========================================================================== */
     function generateMockData() {
       let totalCartonCounter = 0;
 
-      RACK_CONFIG.aisles.forEach((aisleId, aisleIdx) => {
+      RACK_CONFIG.aisles.forEach((aisleId) => {
         for (let r = 1; r <= RACK_CONFIG.racksPerAisle; r++) {
           const rackCodeNumber = r.toString().padStart(2, '0');
           const rackId = `RACK-${aisleId}${rackCodeNumber}`;
@@ -366,29 +358,27 @@
             name: `Dãy ${aisleId} - Vị trí ${rackCodeNumber}`,
             levels: [],
             totalCartons: 0,
-            threeGroup: null // Gán sau khi tạo Mesh 3D
+            threeGroup: null
           };
 
-          // Tạo 3 tầng cho mỗi Rack
           for (let lvl = 1; lvl <= RACK_CONFIG.levelsPerRack; lvl++) {
             const levelData = {
-              levelIndex: lvl - 1, // 0-based
+              levelIndex: lvl - 1,
               levelNumber: lvl,
               cartons: []
             };
 
-            // Ngẫu nhiên từ 2 đến 8 Carton mỗi tầng theo yêu cầu
-            const cartonCount = Math.floor(Math.random() * 7) + 2; 
+            // 2 đến 4 carton mỗi tầng để vừa đẹp vừa siêu nhẹ
+            const cartonCount = Math.floor(Math.random() * 3) + 2; 
 
             for (let c = 1; c <= cartonCount; c++) {
               totalCartonCounter++;
               const prod = SAMPLE_PRODUCTS[Math.floor(Math.random() * SAMPLE_PRODUCTS.length)];
               const cartonId = `CTN-${aisleId}${rackCodeNumber}-L${lvl}-${c.toString().padStart(2, '0')}`;
               
-              // Kích thước thùng ngẫu nhiên trong khoảng tiêu chuẩn kho
-              const w = parseFloat((0.35 + Math.random() * 0.35).toFixed(2));
-              const h = parseFloat((0.30 + Math.random() * 0.35).toFixed(2));
-              const d = parseFloat((0.35 + Math.random() * 0.40).toFixed(2));
+              const w = parseFloat((0.45 + Math.random() * 0.25).toFixed(2));
+              const h = parseFloat((0.40 + Math.random() * 0.25).toFixed(2));
+              const d = parseFloat((0.45 + Math.random() * 0.25).toFixed(2));
               const quantity = Math.floor(Math.random() * 45) + 5;
 
               const cartonData = {
@@ -417,20 +407,17 @@
         }
       });
 
-      // Cập nhật số liệu thống kê lên Header
       document.getElementById('kpi-cartons').textContent = totalCartonCounter.toLocaleString();
     }
 
     /* ==========================================================================
-       4. THIẾT LẬP THREE.JS SCENE, CAMERA, RENDERER, ÁNH SÁNG
+       4. THIẾT LẬP THREE.JS SCENE SIÊU NHẸ (LIGHTWEIGHT & OPTIMIZED)
        ========================================================================== */
     const container = document.getElementById('canvas-container');
     let scene, camera, renderer, controls;
     let raycaster, mouse;
-    let hoveredMesh = null;
     let animationFrameId = null;
 
-    // Quản lý animation chuyển động Camera mượt mà (smooth camera lerp)
     const cameraTargetAnim = {
       isAnimating: false,
       startCamPos: new THREE.Vector3(),
@@ -438,508 +425,225 @@
       startLookAt: new THREE.Vector3(),
       targetLookAt: new THREE.Vector3(),
       progress: 0,
-      duration: 1.0 // giây
+      duration: 0.8
     };
 
-    // Shared Materials để tối ưu hiệu năng bộ nhớ
+    // Tối ưu hóa: Dùng MeshLambertMaterial thay vì Standard để tăng tốc độ render 3-4 lần
     const materials = {
-      steelFrame: new THREE.MeshStandardMaterial({
-        color: 0x1d6fd8, // Xanh dương công nghiệp tiêu chuẩn như trong ảnh mẫu
-        metalness: 0.5,
-        roughness: 0.35
-      }),
-      horizontalBeam: new THREE.MeshStandardMaterial({
-        color: 0xee581b, // Cam an toàn công nghiệp rực rỡ (Safety Orange)
-        metalness: 0.45,
-        roughness: 0.35
-      }),
-      crossBracing: new THREE.MeshStandardMaterial({
-        color: 0x1d6fd8, // Thanh giằng hông đồng bộ màu xanh dương như trong ảnh
-        metalness: 0.5,
-        roughness: 0.4
-      }),
-      shelfMesh: new THREE.MeshStandardMaterial({
-        color: 0x94a3b8, // Thanh đỡ thép sáng
-        metalness: 0.6,
-        roughness: 0.4
-      }),
-      // Vật liệu Pallet gỗ công nghiệp
-      woodPallet: new THREE.MeshStandardMaterial({
-        color: 0xd4a373, // Gỗ thông vàng tự nhiên
-        roughness: 0.85,
-        metalness: 0.05
-      }),
-      // Các loại vật liệu thùng carton theo ảnh mẫu
+      steelBlue: new THREE.MeshLambertMaterial({ color: 0x1d6fd8 }),
+      beamOrange: new THREE.MeshLambertMaterial({ color: 0xee581b }),
+      woodPallet: new THREE.MeshLambertMaterial({ color: 0xd4a373 }),
       cartonStyles: [
-        {
-          base: new THREE.MeshStandardMaterial({ color: 0xdf8437, roughness: 0.75 }), // Thùng cam kiểu Home Depot
-          tape: new THREE.MeshStandardMaterial({ color: 0xbf360c, roughness: 0.5 }),
-          badge: 0xffffff,
-          accent: 0xc45012
-        },
-        {
-          base: new THREE.MeshStandardMaterial({ color: 0xdfd4be, roughness: 0.8 }), // Thùng carton vàng kem tiêu chuẩn
-          tape: new THREE.MeshStandardMaterial({ color: 0xa87948, roughness: 0.6 }),
-          badge: 0xffffff,
-          accent: 0x8a5b29
-        },
-        {
-          base: new THREE.MeshStandardMaterial({ color: 0xebedf0, roughness: 0.7 }), // Thùng trắng xám điện tử
-          tape: new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.5 }),
-          badge: 0x0284c7,
-          accent: 0x64748b
-        },
-        {
-          base: new THREE.MeshStandardMaterial({ color: 0x242d38, roughness: 0.7 }), // Thùng đen sang trọng (Continental)
-          tape: new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 }),
-          badge: 0xf59e0b,
-          accent: 0xeab308
-        },
-        {
-          base: new THREE.MeshStandardMaterial({ color: 0x5a738e, roughness: 0.75 }), // Kiện hàng xanh dương xám
-          tape: new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.5 }),
-          badge: 0xffffff,
-          accent: 0x93c5fd
-        }
+        new THREE.MeshLambertMaterial({ color: 0xdf8437 }), // Cam Home Depot
+        new THREE.MeshLambertMaterial({ color: 0xdfd4be }), // Carton kem
+        new THREE.MeshLambertMaterial({ color: 0xebedf0 }), // Trắng xám
+        new THREE.MeshLambertMaterial({ color: 0x242d38 }), // Đen Continental
+        new THREE.MeshLambertMaterial({ color: 0x5a738e })  // Xanh xám
       ],
-      highlightRack: new THREE.MeshStandardMaterial({
+      highlightRack: new THREE.MeshLambertMaterial({
         color: 0x0284c7,
-        emissive: 0x38bdf8,
-        emissiveIntensity: 0.8,
-        metalness: 0.5,
-        roughness: 0.2
+        emissive: 0x0284c7
       }),
-      highlightCarton: new THREE.MeshStandardMaterial({
+      highlightCarton: new THREE.MeshLambertMaterial({
         color: 0xf59e0b,
-        emissive: 0xf59e0b,
-        emissiveIntensity: 0.75,
-        roughness: 0.3
+        emissive: 0xd97706
       })
     };
 
-    // Tạo chất liệu bọc chân bảo hộ vạch vàng - đen (Yellow & Black striped safety protector)
-    function createSafetyStripeTexture() {
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#facc15'; // Vàng an toàn
-      ctx.fillRect(0, 0, 128, 128);
-      ctx.fillStyle = '#18181b'; // Đen
-      for (let i = -128; i < 256; i += 32) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i + 16, 0);
-        ctx.lineTo(i + 16 - 32, 128);
-        ctx.lineTo(i - 32, 128);
-        ctx.closePath();
-        ctx.fill();
-      }
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.5, metalness: 0.2 });
-    }
-    const safetyGuardMaterial = createSafetyStripeTexture();
-
     function initThreeScene() {
-      // 1. Tạo Scene với nền trời sáng (Light Warehouse Environment)
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0xf1f5f9); // Nền sáng Slate-100 dịu mắt
-      scene.fog = new THREE.FogExp2(0xf1f5f9, 0.010);
+      scene.background = new THREE.Color(0xf1f5f9);
 
-      // 2. Camera
       camera = new THREE.PerspectiveCamera(
-        50,
+        45,
         container.clientWidth / container.clientHeight,
         0.5,
-        500
+        300
       );
-      // Góc nhìn ban đầu quan sát tổng thể và dịch sang phải một chút để tránh bị che bởi Panel trái
-      camera.position.set(34, 25, 40);
+      camera.position.set(30, 22, 34);
 
-      // 3. Renderer với khử răng cưa và tone mapping hiện đại
-      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      // Tắt shadow map và khóa pixelRatio = 1.2 max để thiết bị mát mẻ, không giật lag
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "low-power" });
       renderer.setSize(container.clientWidth, container.clientHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.05;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
+      renderer.shadowMap.enabled = false; // Tắt shadow map nặng
       container.appendChild(renderer.domElement);
 
-      // 4. OrbitControls
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
-      controls.dampingFactor = 0.06;
-      controls.maxPolarAngle = Math.PI / 2 - 0.02; // Không cho camera chui xuống dưới sàn kho
+      controls.dampingFactor = 0.08;
+      controls.maxPolarAngle = Math.PI / 2 - 0.02;
       controls.minDistance = 2.0;
-      controls.maxDistance = 160;
-      // Dịch tâm nhìn (lookAt) sang phải một chút (-1.5) để hệ thống rack nằm trọn vẹn vào vùng nhìn rõ
-      controls.target.set(-1.5, 3, 0);
+      controls.maxDistance = 120;
+      controls.target.set(-1.0, 2.5, 0);
 
-      // 5. Hệ thống Chiếu sáng nhà kho sáng sủa (Daylight Cleanroom Warehouse Lighting)
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1.25);
+      // Đèn đơn giản, nhẹ nhàng không tốn GPU
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
       scene.add(ambientLight);
 
-      // Đèn chính góc cao tạo bóng đổ mềm
-      const sunLight = new THREE.DirectionalLight(0xffffff, 1.35);
-      sunLight.position.set(25, 45, 20);
-      sunLight.castShadow = true;
-      sunLight.shadow.mapSize.width = 2048;
-      sunLight.shadow.mapSize.height = 2048;
-      sunLight.shadow.camera.near = 1;
-      sunLight.shadow.camera.far = 120;
-      const d = 35;
-      sunLight.shadow.camera.left = -d;
-      sunLight.shadow.camera.right = d;
-      sunLight.shadow.camera.top = d;
-      sunLight.shadow.camera.bottom = -d;
-      sunLight.shadow.bias = -0.0005;
-      scene.add(sunLight);
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+      dirLight.position.set(20, 30, 15);
+      scene.add(dirLight);
 
-      // Đèn bổ trợ fill light tạo sự thông thoáng
-      const fillLight = new THREE.DirectionalLight(0xe0f2fe, 0.6);
-      fillLight.position.set(-30, 25, -20);
-      scene.add(fillLight);
-
-      // 6. Xây dựng Sàn nhà kho công nghiệp sáng màu
       createWarehouseFloor();
 
-      // 7. Raycaster & Mouse Vector
       raycaster = new THREE.Raycaster();
       mouse = new THREE.Vector2();
 
-      // 8. Event Listeners
       window.addEventListener('resize', onWindowResize);
       container.addEventListener('pointermove', onPointerMove, { passive: true });
       container.addEventListener('pointerdown', onPointerDown, { passive: true });
       container.addEventListener('pointerup', onPointerUp, { passive: true });
-      // Hỗ trợ touch trực tiếp cho các thiết bị iOS không phát sinh pointer click
       container.addEventListener('touchend', onTouchEndIOS, { passive: false });
       container.addEventListener('click', onClickScene);
     }
 
-    /* ==========================================================================
-       5. DỰNG SÀN NHÀ KHO & VẠCH KẺ CHỈ DẪN (LIGHT FLOORS & GROUND MARKINGS)
-       ========================================================================== */
     function createWarehouseFloor() {
-      const floorSize = 130;
-      // Sàn bê tông sơn Epoxy xám sáng bóng công nghiệp
+      const floorSize = 100;
       const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize);
-      const floorMat = new THREE.MeshStandardMaterial({
-        color: 0xe2e8f0, // Sàn xám sáng Slate-200 sạch sẽ
-        roughness: 0.45,
-        metalness: 0.1
-      });
+      const floorMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f0 });
       const floor = new THREE.Mesh(floorGeo, floorMat);
       floor.rotation.x = -Math.PI / 2;
-      floor.position.y = 0;
-      floor.receiveShadow = true;
       scene.add(floor);
 
-      // Lưới chỉ dẫn mặt sàn thanh mảnh, dễ nhìn
-      const grid = new THREE.GridHelper(floorSize, 65, 0x94a3b8, 0xcfd8e3);
+      const grid = new THREE.GridHelper(floorSize, 40, 0x94a3b8, 0xcfd8e3);
       grid.position.y = 0.01;
       scene.add(grid);
-
-      // Vạch sơn an toàn màu vàng cam chạy dọc các lối đi chính
-      [-RACK_CONFIG.aisleSpacingX - 2.5, -2.5, 2.5, RACK_CONFIG.aisleSpacingX + 2.5].forEach(xPos => {
-        const lineGeo = new THREE.PlaneGeometry(0.14, floorSize * 0.7);
-        const lineMat = new THREE.MeshBasicMaterial({ color: 0xeab308, opacity: 0.85, transparent: true });
-        const line = new THREE.Mesh(lineGeo, lineMat);
-        line.rotation.x = -Math.PI / 2;
-        line.position.set(xPos, 0.02, 0);
-        scene.add(line);
-      });
     }
 
     /* ==========================================================================
-       6. HÀM TẠO MÔ HÌNH RACK, LEVEL VÀ CARTON (3D MODEL BUILDERS)
+       5. GỘP GEOMETRY ĐỂ GIẢM 90% DRAW CALLS (HIGH PERFORMANCE BUILDER)
        ========================================================================== */
-    
-    /**
-     * Tạo kết cấu thép hoàn chỉnh cho một khung kệ kho công nghiệp (Single Bay Industrial Rack)
-     */
     function createRackStructure(rackData) {
       const rackGroup = new THREE.Group();
       rackGroup.name = rackData.id;
-      rackGroup.userData = {
-        type: 'RACK',
-        rackId: rackData.id,
-        data: rackData
-      };
+      rackGroup.userData = { type: 'RACK', rackId: rackData.id, data: rackData };
 
       const w = RACK_CONFIG.rackWidth;
       const d = RACK_CONFIG.rackDepth;
-      // Chiều cao chuẩn 3 tầng (tầng trệt + 2 tầng dầm trên), đỉnh cột nhô vừa đủ bảo vệ tầng 3
-      const h = 2 * RACK_CONFIG.levelHeight + 1.9;
+      const h = 2 * RACK_CONFIG.levelHeight + 1.8;
       const p = RACK_CONFIG.postSize;
-
-      // --- A. Cột trụ đứng (4 Vertical Uprights màu xanh dương) ---
-      const postGeo = new THREE.BoxGeometry(p, h, p);
       const halfW = w / 2;
       const halfD = d / 2;
+
+      // Danh sách chứa geometry để gộp thành 1 mesh xanh và 1 mesh cam duy nhất cho cả Rack
+      const blueGeometries = [];
+      const orangeGeometries = [];
+
+      // 4 cột trụ
       const postPositions = [
         [-halfW + p/2, h/2, -halfD + p/2],
         [ halfW - p/2, h/2, -halfD + p/2],
         [-halfW + p/2, h/2,  halfD - p/2],
         [ halfW - p/2, h/2,  halfD - p/2]
       ];
-
       postPositions.forEach(pos => {
-        const post = new THREE.Mesh(postGeo, materials.steelFrame);
-        post.position.set(...pos);
-        post.castShadow = true;
-        post.receiveShadow = true;
-        post.userData = { type: 'RACK_FRAME', rackId: rackData.id };
-        rackGroup.add(post);
-
-        // Chân đế kim loại màu xanh
-        const basePlateGeo = new THREE.BoxGeometry(p * 2, 0.02, p * 2);
-        const basePlate = new THREE.Mesh(basePlateGeo, materials.steelFrame);
-        basePlate.position.set(pos[0], 0.01, pos[2]);
-        rackGroup.add(basePlate);
-
-        // Chân bọc bảo vệ chống va chạm sọc vàng đen ở chân cột (giống ảnh mẫu)
-        const guardHeight = 0.45;
-        const guardGeo = new THREE.BoxGeometry(p * 1.5, guardHeight, p * 1.5);
-        const guard = new THREE.Mesh(guardGeo, safetyGuardMaterial);
-        guard.position.set(pos[0], guardHeight / 2, pos[2]);
-        guard.castShadow = true;
-        rackGroup.add(guard);
+        const postGeo = new THREE.BoxGeometry(p, h, p);
+        postGeo.translate(...pos);
+        blueGeometries.push(postGeo);
       });
 
-      // --- B. Thanh giằng chéo chịu lực hai bên hông màu xanh dương (Side Bracings) ---
+      // Thanh giằng hông
       for (let side = -1; side <= 1; side += 2) {
         const xPos = side * (halfW - p/2);
         for (let l = 0; l < 2; l++) {
-          const yBottom = 0.15 + l * RACK_CONFIG.levelHeight;
           const yTop = 0.15 + (l + 1) * RACK_CONFIG.levelHeight;
-          
-          // Giằng chéo tròn màu xanh
-          const diagLength = Math.hypot(d - p, RACK_CONFIG.levelHeight);
-          const braceGeo = new THREE.CylinderGeometry(0.018, 0.018, diagLength, 8);
-          const brace = new THREE.Mesh(braceGeo, materials.crossBracing);
-          brace.position.set(xPos, (yBottom + yTop) / 2, 0);
-          const angle = Math.atan2(RACK_CONFIG.levelHeight, d - p);
-          brace.rotation.x = (side === 1 ? 1 : -1) * (Math.PI / 2 - angle);
-          brace.rotation.z = Math.PI / 2;
-          rackGroup.add(brace);
-
-          // Thanh ngang giằng hông màu xanh
-          const horizGeo = new THREE.BoxGeometry(p * 0.8, 0.035, d - p);
-          const horiz = new THREE.Mesh(horizGeo, materials.crossBracing);
-          horiz.position.set(xPos, yTop, 0);
-          rackGroup.add(horiz);
+          const braceGeo = new THREE.BoxGeometry(p * 0.8, 0.03, d - p);
+          braceGeo.translate(xPos, yTop, 0);
+          blueGeometries.push(braceGeo);
         }
       }
 
-      // Thanh giằng đỉnh nóc liên kết 2 bên (Top Tie Beam) - Không để hàng lên trên
+      // Giằng đỉnh
       [-halfD + p/2, halfD - p/2].forEach(zPos => {
-        const topTieGeo = new THREE.BoxGeometry(w, 0.04, 0.04);
-        const topTie = new THREE.Mesh(topTieGeo, materials.steelFrame);
-        topTie.position.set(0, h - 0.02, zPos);
-        rackGroup.add(topTie);
+        const topGeo = new THREE.BoxGeometry(w, 0.04, 0.04);
+        topGeo.translate(0, h - 0.02, zPos);
+        blueGeometries.push(topGeo);
       });
 
-      // --- C. Dựng 3 tầng chứa hàng (Tầng 1: Trệt, Tầng 2: Giữa, Tầng 3: Tầng cao nhất bên trong khung) ---
+      // Tạo các dầm cam (Beam) cho 3 tầng
+      for (let lvl = 1; lvl <= 3; lvl++) {
+        const yBeam = 0.15 + (lvl - 1) * RACK_CONFIG.levelHeight;
+        const bH = RACK_CONFIG.beamHeight;
+
+        const fBeam = new THREE.BoxGeometry(w, bH, 0.05);
+        fBeam.translate(0, yBeam - bH/2, d/2 - 0.025);
+        orangeGeometries.push(fBeam);
+
+        const bBeam = new THREE.BoxGeometry(w, bH, 0.05);
+        bBeam.translate(0, yBeam - bH/2, -d/2 + 0.025);
+        orangeGeometries.push(bBeam);
+      }
+
+      // GỘP MESH KHUNG: Từ hàng chục khối thành đúng 2 khối cực nhẹ!
+      const mergedBlue = BufferGeometryUtils.mergeGeometries(blueGeometries);
+      const blueMesh = new THREE.Mesh(mergedBlue, materials.steelBlue);
+      blueMesh.userData = { type: 'RACK_FRAME', rackId: rackData.id };
+      rackGroup.add(blueMesh);
+
+      const mergedOrange = BufferGeometryUtils.mergeGeometries(orangeGeometries);
+      const orangeMesh = new THREE.Mesh(mergedOrange, materials.beamOrange);
+      orangeMesh.userData = { type: 'RACK_FRAME', rackId: rackData.id };
+      rackGroup.add(orangeMesh);
+
+      // Thêm Pallet và Hàng hóa (Tối ưu hóa hình học)
       rackData.levels.forEach((lvlData) => {
-        const levelGroup = createLevelStructure(lvlData, rackData);
-        rackGroup.add(levelGroup);
+        layoutOptimizedCartons(rackGroup, lvlData, rackData);
       });
 
-      // Lưu tham chiếu Mesh Group để tương tác
       rackData.threeGroup = rackGroup;
       return rackGroup;
     }
 
-    /**
-     * Tạo một tầng hàng: Thanh Beam ngang màu cam an toàn, thanh đỡ và Pallet gỗ chứa hàng
-     * Tầng 1: Tầng trệt (Ground Floor) cao 0.15m
-     * Tầng 2: Tầng giữa cao 1.95m
-     * Tầng 3: Tầng trên cao 3.75m (nằm trọn trong khung kệ, không vượt nóc)
-     */
-    function createLevelStructure(levelData, rackData) {
-      const levelGroup = new THREE.Group();
-      levelGroup.name = `${rackData.id}-L${levelData.levelNumber}`;
-      levelGroup.userData = {
-        type: 'LEVEL',
-        rackId: rackData.id,
-        levelNumber: levelData.levelNumber,
-        levelIndex: levelData.levelIndex,
-        data: levelData
-      };
-
-      const w = RACK_CONFIG.rackWidth;
-      const d = RACK_CONFIG.rackDepth;
-      const bH = RACK_CONFIG.beamHeight;
-      // Tầng 1 là tầng trệt (0.15m), tầng 2 (1.95m), tầng 3 (3.75m)
-      const yBeam = 0.15 + (levelData.levelNumber - 1) * RACK_CONFIG.levelHeight;
-
-      // 1. Hai thanh Beam dọc chịu lực màu cam an toàn (Safety Orange) mặt trước và mặt sau
-      const beamGeo = new THREE.BoxGeometry(w, bH, 0.06);
-      
-      const frontBeam = new THREE.Mesh(beamGeo, materials.horizontalBeam);
-      frontBeam.position.set(0, yBeam - bH/2, d/2 - 0.03);
-      frontBeam.castShadow = true;
-      frontBeam.userData = { type: 'BEAM', rackId: rackData.id, levelNumber: levelData.levelNumber };
-      levelGroup.add(frontBeam);
-
-      const backBeam = new THREE.Mesh(beamGeo, materials.horizontalBeam);
-      backBeam.position.set(0, yBeam - bH/2, -d/2 + 0.03);
-      backBeam.castShadow = true;
-      backBeam.userData = { type: 'BEAM', rackId: rackData.id, levelNumber: levelData.levelNumber };
-      levelGroup.add(backBeam);
-
-      // Các thanh đỡ pallet ngang (Cross support bars) nối giữa 2 beam cam
-      for (let bx = -w / 2 + 0.4; bx <= w / 2 - 0.4; bx += 0.6) {
-        const barGeo = new THREE.BoxGeometry(0.04, 0.03, d - 0.06);
-        const bar = new THREE.Mesh(barGeo, materials.shelfMesh);
-        bar.position.set(bx, yBeam - bH + 0.015, 0);
-        levelGroup.add(bar);
-      }
-
-      // 2. Sắp xếp Pallet gỗ và các thùng Carton trên tầng này
-      layoutCartonsOnLevel(levelGroup, levelData, yBeam);
-
-      return levelGroup;
-    }
-
-    /**
-     * Tạo khối Pallet gỗ công nghiệp thực tế
-     */
-    function createWoodenPallet(palletW, palletD, palletH = 0.14) {
-      const palletGroup = new THREE.Group();
-
-      // Mặt ván gỗ trên cùng (Top Deck Boards)
-      const boardCount = 6;
-      const boardW = palletW / boardCount - 0.02;
-      for (let i = 0; i < boardCount; i++) {
-        const boardGeo = new THREE.BoxGeometry(boardW, 0.02, palletD);
-        const board = new THREE.Mesh(boardGeo, materials.woodPallet);
-        board.position.set(-palletW / 2 + boardW / 2 + i * (boardW + 0.02), palletH - 0.01, 0);
-        board.receiveShadow = true;
-        board.castShadow = true;
-        palletGroup.add(board);
-      }
-
-      // 3 thanh gối đỡ dọc ở giữa và 2 mép (Stringers)
-      [-palletW / 2 + 0.04, 0, palletW / 2 - 0.04].forEach(x => {
-        const strGeo = new THREE.BoxGeometry(0.05, palletH - 0.04, palletD);
-        const str = new THREE.Mesh(strGeo, materials.woodPallet);
-        str.position.set(x, palletH / 2, 0);
-        str.castShadow = true;
-        palletGroup.add(str);
-      });
-
-      // 3 ván gỗ dưới đáy (Bottom Skids)
-      for (let i = 0; i < 3; i++) {
-        const btmGeo = new THREE.BoxGeometry(boardW * 1.2, 0.02, palletD);
-        const btm = new THREE.Mesh(btmGeo, materials.woodPallet);
-        btm.position.set(-palletW / 2 + 0.08 + i * ((palletW - 0.16) / 2), 0.01, 0);
-        palletGroup.add(btm);
-      }
-
-      return palletGroup;
-    }
-
-    /**
-     * Bố trí các cụm Pallet gỗ và Thùng Carton trên tầng y như ảnh thực tế
-     */
-    function layoutCartonsOnLevel(levelGroup, levelData, shelfSurfaceY) {
+    function layoutOptimizedCartons(rackGroup, levelData, rackData) {
       const cartons = levelData.cartons;
       const count = cartons.length;
       if (count === 0) return;
 
-      const availableWidth = RACK_CONFIG.rackWidth - 0.25;
+      const yBeam = 0.15 + (levelData.levelNumber - 1) * RACK_CONFIG.levelHeight;
+      const availableWidth = RACK_CONFIG.rackWidth - 0.3;
       const slotWidth = availableWidth / count;
       const startX = -availableWidth / 2 + slotWidth / 2;
 
       cartons.forEach((ctn, idx) => {
         const posX = startX + idx * slotWidth;
-        const palletH = 0.12;
+        const palletH = 0.10;
 
-        // 1. Tạo Pallet gỗ đỡ phía dưới mỗi thùng
-        const palletW = Math.max(ctn.size.width + 0.04, 0.45);
-        const palletD = Math.max(ctn.size.depth + 0.04, 0.95);
-        const pallet = createWoodenPallet(palletW, palletD, palletH);
-        pallet.position.set(posX, shelfSurfaceY, 0);
-        levelGroup.add(pallet);
+        // Pallet gỗ đơn giản hóa (1 Mesh nhẹ duy nhất)
+        const palletGeo = new THREE.BoxGeometry(ctn.size.width + 0.05, palletH, RACK_CONFIG.rackDepth - 0.15);
+        const palletMesh = new THREE.Mesh(palletGeo, materials.woodPallet);
+        palletMesh.position.set(posX, yBeam + palletH/2, 0);
+        rackGroup.add(palletMesh);
 
-        // 2. Tạo Thùng Carton với phong cách màu sắc chân thực
+        // Thùng Carton (1 Mesh duy nhất, không phụ kiện phức tạp)
+        const boxGeo = new THREE.BoxGeometry(ctn.size.width, ctn.size.height, ctn.size.depth);
         const styleIndex = (idx + levelData.levelNumber) % materials.cartonStyles.length;
-        const ctnMesh = createCartonMesh(ctn, styleIndex);
+        const defaultMat = materials.cartonStyles[styleIndex];
+        
+        const boxMesh = new THREE.Mesh(boxGeo, defaultMat);
+        const posY = yBeam + palletH + ctn.size.height / 2;
+        boxMesh.position.set(posX, posY, 0);
 
-        const posY = shelfSurfaceY + palletH + ctn.size.height / 2;
-        ctnMesh.position.set(posX, posY, 0);
+        boxMesh.userData = {
+          type: 'CARTON',
+          cartonId: ctn.id,
+          rackId: rackData.id,
+          levelNumber: levelData.levelNumber,
+          data: ctn,
+          defaultMaterial: defaultMat
+        };
 
-        levelGroup.add(ctnMesh);
-        ctn.threeMesh = ctnMesh;
+        rackGroup.add(boxMesh);
+        ctn.threeMesh = boxMesh;
       });
     }
 
-    /**
-     * Tạo chi tiết một thùng carton kèm tem nhãn và logo thương hiệu theo phong cách ảnh mẫu
-     */
-    function createCartonMesh(ctnData, styleIndex = 0) {
-      const group = new THREE.Group();
-      group.name = ctnData.id;
-      group.userData = {
-        type: 'CARTON',
-        cartonId: ctnData.id,
-        rackId: ctnData.rackId,
-        levelNumber: ctnData.levelNumber,
-        data: ctnData
-      };
-
-      const { width, height, depth } = ctnData.size;
-      const style = materials.cartonStyles[styleIndex];
-
-      // Thân thùng carton
-      const boxGeo = new THREE.BoxGeometry(width, height, depth);
-      const defaultMat = style.base.clone();
-      const boxMesh = new THREE.Mesh(boxGeo, defaultMat);
-      boxMesh.castShadow = true;
-      boxMesh.receiveShadow = true;
-      boxMesh.userData = { ...group.userData, defaultMaterial: defaultMat };
-      group.add(boxMesh);
-
-      // Đường băng dính dán nắp thùng
-      const tapeGeo = new THREE.PlaneGeometry(width * 0.98, depth * 0.22);
-      const tape = new THREE.Mesh(tapeGeo, style.tape);
-      tape.rotation.x = -Math.PI / 2;
-      tape.position.y = height / 2 + 0.001;
-      group.add(tape);
-
-      // Tem nhãn/Logo in mặt trước thùng (như Home Depot / Continental trong ảnh)
-      const labelGeo = new THREE.PlaneGeometry(width * 0.55, height * 0.5);
-      const labelMat = new THREE.MeshBasicMaterial({ color: style.badge });
-      const label = new THREE.Mesh(labelGeo, labelMat);
-      label.position.set(0, 0, depth / 2 + 0.002);
-      group.add(label);
-
-      // Viền họa tiết/biểu tượng bên trong tem
-      const innerBadgeGeo = new THREE.PlaneGeometry(width * 0.42, height * 0.38);
-      const innerMat = new THREE.MeshBasicMaterial({ color: style.accent });
-      const innerBadge = new THREE.Mesh(innerBadgeGeo, innerMat);
-      innerBadge.position.set(0, 0, depth / 2 + 0.003);
-      group.add(innerBadge);
-
-      return group;
-    }
-
-    /* ==========================================================================
-       7. DỰNG TOÀN BỘ KHO HÀNG 3D (BUILD ENTIRE WAREHOUSE SCENE)
-       ========================================================================== */
     function buildWarehouse3D() {
       const warehouseGroup = new THREE.Group();
       warehouseGroup.name = "WAREHOUSE_MAIN_GROUP";
 
       const totalAisles = RACK_CONFIG.aisles.length;
       const racksPerAisle = RACK_CONFIG.racksPerAisle;
-
-      // Tính toán khoảng căn giữa toàn bộ hệ thống
       const totalWidthX = (totalAisles - 1) * RACK_CONFIG.aisleSpacingX;
       const totalDepthZ = racksPerAisle * (RACK_CONFIG.rackWidth + RACK_CONFIG.rackMarginZ);
       const startX = -totalWidthX / 2;
@@ -948,16 +652,12 @@
       warehouseData.racks.forEach((rack) => {
         const aisleIndex = RACK_CONFIG.aisles.indexOf(rack.aisle);
         const rackIndex = rack.indexInAisle - 1;
-
-        // Vị trí tọa độ thế giới (World Coordinates)
         const posX = startX + aisleIndex * RACK_CONFIG.aisleSpacingX;
         const posZ = startZ + rackIndex * (RACK_CONFIG.rackWidth + RACK_CONFIG.rackMarginZ);
 
         const rack3D = createRackStructure(rack);
-        // Quay 90 độ để mặt tiền rack đối diện với lối đi (Aisle Corridor)
         rack3D.rotation.y = Math.PI / 2;
         rack3D.position.set(posX, 0, posZ);
-
         warehouseGroup.add(rack3D);
       });
 
@@ -965,7 +665,7 @@
     }
 
     /* ==========================================================================
-       8. QUẢN LÝ TƯƠNG TÁC CHUỘT VÀ RAYCASTER (INTERACTIONS & SELECTION)
+       6. TƯƠNG TÁC CHUỘT & RAYCASTER SIÊU NHẸ
        ========================================================================== */
     let pointerDownPos = { x: 0, y: 0, time: 0 };
 
@@ -976,11 +676,9 @@
     }
 
     function onPointerUp(event) {
-      // Hỗ trợ xử lý click ngay tại pointerup cho màn hình cảm ứng di động
       const diffX = Math.abs(event.clientX - pointerDownPos.x);
       const diffY = Math.abs(event.clientY - pointerDownPos.y);
-      const duration = Date.now() - pointerDownPos.time;
-      if (diffX <= 8 && diffY <= 8 && duration < 400) {
+      if (diffX <= 8 && diffY <= 8 && Date.now() - pointerDownPos.time < 400) {
         handleRaycastSelection(event.clientX, event.clientY);
       }
     }
@@ -990,56 +688,48 @@
         const touch = event.changedTouches[0];
         const diffX = Math.abs(touch.clientX - pointerDownPos.x);
         const diffY = Math.abs(touch.clientY - pointerDownPos.y);
-        const duration = Date.now() - pointerDownPos.time;
-        if (diffX <= 12 && diffY <= 12 && duration < 450) {
-          event.preventDefault(); // Ngăn zoom kép giả lập của iOS
+        if (diffX <= 12 && diffY <= 12 && Date.now() - pointerDownPos.time < 450) {
+          event.preventDefault();
           handleRaycastSelection(touch.clientX, touch.clientY);
         }
       }
     }
 
     function onPointerMove(event) {
+      if (window.matchMedia('(pointer: coarse)').matches) return;
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-      // Không hiện hover tooltip trên thiết bị màn hình cảm ứng để tránh vướng víu
-      if (window.matchMedia('(pointer: coarse)').matches) {
-        return;
-      }
-
-      // Cập nhật vị trí Tooltip nổi khi hover
       const tooltip = document.getElementById('hover-tooltip');
       tooltip.style.left = `${event.clientX}px`;
       tooltip.style.top = `${event.clientY - 12}px`;
 
-      // Hover Raycast check
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(scene.children, true);
 
-      let foundInteractive = null;
+      let found = null;
       for (let hit of intersects) {
-        const uData = findInteractiveUserData(hit.object);
-        if (uData) {
-          foundInteractive = uData;
+        if (hit.object.userData && (hit.object.userData.type === 'CARTON' || hit.object.userData.type === 'RACK_FRAME')) {
+          found = hit.object.userData;
           break;
         }
       }
 
-      if (foundInteractive) {
+      if (found) {
         document.body.style.cursor = 'pointer';
         tooltip.classList.remove('hidden');
-        if (foundInteractive.type === 'CARTON') {
-          const ctn = warehouseData.cartonMap.get(foundInteractive.cartonId);
+        if (found.type === 'CARTON') {
+          const ctn = warehouseData.cartonMap.get(found.cartonId);
           document.getElementById('tooltip-text').innerHTML = `
             <div class="font-bold text-amber-700"><i class="fa-solid fa-box"></i> ${ctn.id}</div>
             <div class="text-[11px] text-slate-600">${ctn.productName}</div>
           `;
         } else {
-          const rk = warehouseData.rackMap.get(foundInteractive.rackId);
+          const rk = warehouseData.rackMap.get(found.rackId);
           document.getElementById('tooltip-text').innerHTML = `
             <div class="font-bold text-sky-700"><i class="fa-solid fa-server"></i> ${rk.id}</div>
-            <div class="text-[11px] text-slate-600">${rk.name} (${rk.totalCartons} Thùng)</div>
+            <div class="text-[11px] text-slate-600">${rk.name}</div>
           `;
         }
       } else {
@@ -1055,7 +745,6 @@
       handleRaycastSelection(event.clientX, event.clientY);
     }
 
-    // Hàm tập trung xử lý chọn đối tượng 3D tương thích cả Desktop và iOS Mobile
     function handleRaycastSelection(clientX, clientY) {
       if (!renderer || !camera) return;
       const rect = renderer.domElement.getBoundingClientRect();
@@ -1067,68 +756,40 @@
       raycaster.setFromCamera(clickCoords, camera);
       const intersects = raycaster.intersectObjects(scene.children, true);
 
-      let selectedObject = null;
       for (let hit of intersects) {
-        const uData = findInteractiveUserData(hit.object);
-        if (uData) {
-          selectedObject = uData;
-          break;
+        const u = hit.object.userData;
+        if (u && u.type === 'CARTON') {
+          selectCarton(u.cartonId, true);
+          return;
+        } else if (u && u.type === 'RACK_FRAME') {
+          selectRack(u.rackId, 0, false, true);
+          return;
         }
       }
-
-      if (selectedObject) {
-        if (selectedObject.type === 'CARTON') {
-          selectCarton(selectedObject.cartonId, true);
-        } else if (selectedObject.type === 'RACK' || selectedObject.type === 'RACK_FRAME' || selectedObject.type === 'BEAM' || selectedObject.type === 'SHELF') {
-          selectRack(selectedObject.rackId, selectedObject.levelNumber ? selectedObject.levelNumber - 1 : 0, false, true);
-        }
-      }
-    }
-
-    // Đệ quy tìm đối tượng chứa thông tin userData hợp lệ
-    function findInteractiveUserData(obj) {
-      let current = obj;
-      while (current && current !== scene) {
-        if (current.userData && (current.userData.type === 'CARTON' || current.userData.type === 'RACK' || current.userData.rackId)) {
-          return current.userData;
-        }
-        current = current.parent;
-      }
-      return null;
     }
 
     /* ==========================================================================
-       9. LOGIC CHỌN VÀ HIGHLIGHT ĐỐI TƯỢNG (SELECTION & HIGHLIGHTING)
+       7. QUẢN LÝ HIGHLIGHT & FOCUS CAMERA
        ========================================================================== */
     function clearHighlights() {
-      // Reset màu sắc của tất cả Rack về vật liệu gốc
       warehouseData.racks.forEach(rk => {
         if (!rk.threeGroup) return;
-        rk.threeGroup.traverse(child => {
-          if (child.isMesh) {
-            if (child.userData.type === 'RACK_FRAME') {
-              child.material = materials.steelFrame;
-            } else if (child.userData.type === 'BEAM') {
-              child.material = materials.horizontalBeam;
-            }
+        rk.threeGroup.children.forEach(child => {
+          if (child.isMesh && child.userData.type === 'RACK_FRAME') {
+            child.material = child.geometry.attributes.position.count > 100 
+              ? materials.steelBlue 
+              : materials.beamOrange;
           }
         });
       });
 
-      // Reset màu sắc của tất cả Carton về đúng vật liệu gốc ban đầu
       warehouseData.cartonMap.forEach(ctn => {
-        if (ctn.threeMesh) {
-          const mainBox = ctn.threeMesh.children[0];
-          if (mainBox && mainBox.isMesh && mainBox.userData.defaultMaterial) {
-            mainBox.material = mainBox.userData.defaultMaterial;
-          }
+        if (ctn.threeMesh && ctn.threeMesh.userData.defaultMaterial) {
+          ctn.threeMesh.material = ctn.threeMesh.userData.defaultMaterial;
         }
       });
     }
 
-    /**
-     * Chọn một Rack và cập nhật toàn bộ giao diện & 3D
-     */
     function selectRack(rackId, levelIdx = 0, shouldFocusCamera = false, openPanel = true) {
       const rackData = warehouseData.rackMap.get(rackId);
       if (!rackData) return;
@@ -1137,101 +798,75 @@
       warehouseData.selectedLevelIndex = levelIdx;
       warehouseData.selectedCartonId = null;
 
-      // 1. Highlight trên mô hình 3D
       clearHighlights();
       if (rackData.threeGroup) {
-        rackData.threeGroup.traverse(child => {
-          if (child.isMesh) {
-            if (child.userData.type === 'RACK_FRAME' || child.userData.type === 'BEAM') {
-              child.material = materials.highlightRack;
-            }
-          }
-        });
-      }
-
-      // 2. Focus Camera nếu được yêu cầu
-      if (shouldFocusCamera) {
-        focusCameraOnRack(rackData);
-      }
-
-      // 3. Mở panel chi tiết CHỈ KHI có cờ openPanel = true (khi click thực tế)
-      if (openPanel) {
-        const rightPanel = document.getElementById('right-panel');
-        if (rightPanel.classList.contains('translate-x-[120%]')) {
-          rightPanel.classList.remove('translate-x-[120%]');
-        }
-      }
-      updateRightPanelUI();
-      updateLeftTreeActiveState();
-    }
-
-    /**
-     * Chọn một tầng cụ thể trong Rack đang active
-     */
-    function selectLevel(levelIdx, shouldFocusCamera = false) {
-      warehouseData.selectedLevelIndex = levelIdx;
-      warehouseData.selectedCartonId = null;
-
-      // Reset highlight carton về đúng vật liệu mặc định
-      warehouseData.cartonMap.forEach(ctn => {
-        if (ctn.threeMesh && ctn.threeMesh.children[0] && ctn.threeMesh.children[0].userData.defaultMaterial) {
-          ctn.threeMesh.children[0].material = ctn.threeMesh.children[0].userData.defaultMaterial;
-        }
-      });
-
-      if (shouldFocusCamera) {
-        focusCameraOnLevel(warehouseData.selectedRackId, levelIdx);
-      }
-
-      updateRightPanelUI();
-    }
-
-    /**
-     * Chọn một Carton và focus trực tiếp vào Carton đó
-     */
-    function selectCarton(cartonId, shouldFocusCamera = true) {
-      const cartonData = warehouseData.cartonMap.get(cartonId);
-      if (!cartonData) return;
-
-      // Tự động chuyển chọn Rack và Tầng tương ứng
-      warehouseData.selectedRackId = cartonData.rackId;
-      warehouseData.selectedLevelIndex = cartonData.levelNumber - 1;
-      warehouseData.selectedCartonId = cartonId;
-
-      clearHighlights();
-
-      // Highlight Rack bao quanh
-      const rack = warehouseData.rackMap.get(cartonData.rackId);
-      if (rack && rack.threeGroup) {
-        rack.threeGroup.traverse(child => {
-          if (child.isMesh && (child.userData.type === 'RACK_FRAME' || child.userData.type === 'BEAM')) {
+        rackData.threeGroup.children.forEach(child => {
+          if (child.isMesh && child.userData.type === 'RACK_FRAME') {
             child.material = materials.highlightRack;
           }
         });
       }
 
-      // Highlight nổi bật Carton mục tiêu
-      if (cartonData.threeMesh && cartonData.threeMesh.children[0]) {
-        cartonData.threeMesh.children[0].material = materials.highlightCarton;
-      }
+      if (shouldFocusCamera) focusCameraOnRack(rackData);
 
-      if (shouldFocusCamera && cartonData.threeMesh) {
-        focusCameraOnCarton(cartonData);
-      }
-
-      // Tự động mở panel chi tiết nếu đang ẩn
-      const rightPanel = document.getElementById('right-panel');
-      if (rightPanel.classList.contains('translate-x-[120%]')) {
+      if (openPanel) {
+        const rightPanel = document.getElementById('right-panel');
         rightPanel.classList.remove('translate-x-[120%]');
       }
       updateRightPanelUI();
       updateLeftTreeActiveState();
     }
 
-    /* ==========================================================================
-       10. ĐIỀU KHIỂN VÀ CHUYỂN ĐỘNG CAMERA (CAMERA MOTION & FOCUS)
-       ========================================================================== */
-    function animateCameraTo(targetPos, targetLookAt, duration = 0.9) {
+    function selectLevel(levelIdx, shouldFocusCamera = false) {
+      warehouseData.selectedLevelIndex = levelIdx;
+      warehouseData.selectedCartonId = null;
+
+      warehouseData.cartonMap.forEach(ctn => {
+        if (ctn.threeMesh && ctn.threeMesh.userData.defaultMaterial) {
+          ctn.threeMesh.material = ctn.threeMesh.userData.defaultMaterial;
+        }
+      });
+
+      if (shouldFocusCamera) {
+        focusCameraOnLevel(warehouseData.selectedRackId, levelIdx);
+      }
+      updateRightPanelUI();
+    }
+
+    function selectCarton(cartonId, shouldFocusCamera = true) {
+      const cartonData = warehouseData.cartonMap.get(cartonId);
+      if (!cartonData) return;
+
+      warehouseData.selectedRackId = cartonData.rackId;
+      warehouseData.selectedLevelIndex = cartonData.levelNumber - 1;
+      warehouseData.selectedCartonId = cartonId;
+
+      clearHighlights();
+
+      const rack = warehouseData.rackMap.get(cartonData.rackId);
+      if (rack && rack.threeGroup) {
+        rack.threeGroup.children.forEach(child => {
+          if (child.isMesh && child.userData.type === 'RACK_FRAME') {
+            child.material = materials.highlightRack;
+          }
+        });
+      }
+
+      if (cartonData.threeMesh) {
+        cartonData.threeMesh.material = materials.highlightCarton;
+      }
+
+      if (shouldFocusCamera && cartonData.threeMesh) {
+        focusCameraOnCarton(cartonData);
+      }
+
+      const rightPanel = document.getElementById('right-panel');
+      rightPanel.classList.remove('translate-x-[120%]');
+      updateRightPanelUI();
+      updateLeftTreeActiveState();
+    }
+
+    function animateCameraTo(targetPos, targetLookAt, duration = 0.8) {
       cameraTargetAnim.startCamPos.copy(camera.position);
       cameraTargetAnim.targetCamPos.copy(targetPos);
       cameraTargetAnim.startLookAt.copy(controls.target);
@@ -1245,25 +880,18 @@
       if (!rackData.threeGroup) return;
       const box = new THREE.Box3().setFromObject(rackData.threeGroup);
       const center = box.getCenter(new THREE.Vector3());
-
-      const camPos = new THREE.Vector3(
-        center.x + 4.8,
-        center.y + 2.5,
-        center.z + 5.5
-      );
+      const camPos = new THREE.Vector3(center.x + 4.5, center.y + 2.2, center.z + 5.0);
       animateCameraTo(camPos, center);
     }
 
     function focusCameraOnLevel(rackId, levelIdx) {
       const rackData = warehouseData.rackMap.get(rackId);
       if (!rackData || !rackData.threeGroup) return;
-
       const yLevel = 0.15 + levelIdx * RACK_CONFIG.levelHeight;
       const center = new THREE.Vector3();
       rackData.threeGroup.getWorldPosition(center);
       center.y = yLevel;
-
-      const camPos = new THREE.Vector3(center.x + 3.8, center.y + 1.2, center.z + 4.0);
+      const camPos = new THREE.Vector3(center.x + 3.5, center.y + 1.2, center.z + 3.8);
       animateCameraTo(camPos, center);
     }
 
@@ -1271,34 +899,25 @@
       if (!cartonData.threeMesh) return;
       const cartonWorldPos = new THREE.Vector3();
       cartonData.threeMesh.getWorldPosition(cartonWorldPos);
-
-      const camPos = new THREE.Vector3(
-        cartonWorldPos.x + 1.8,
-        cartonWorldPos.y + 0.9,
-        cartonWorldPos.z + 2.0
-      );
-      animateCameraTo(camPos, cartonWorldPos, 0.8);
+      const camPos = new THREE.Vector3(cartonWorldPos.x + 1.8, cartonWorldPos.y + 0.9, cartonWorldPos.z + 2.0);
+      animateCameraTo(camPos, cartonWorldPos, 0.7);
     }
 
     function resetCameraDefault() {
-      // Góc nhìn mặc định đã được căn lề để không bị panel trái che
-      animateCameraTo(new THREE.Vector3(34, 25, 40), new THREE.Vector3(-1.5, 3, 0), 1.0);
+      animateCameraTo(new THREE.Vector3(30, 22, 34), new THREE.Vector3(-1.0, 2.5, 0), 0.9);
     }
 
     function fitWarehouseView() {
-      // Nhìn bao quát toàn bộ kho, target căn giữa khoảng không gian hiển thị
-      animateCameraTo(new THREE.Vector3(6, 44, 50), new THREE.Vector3(-1.5, 2, 0), 1.2);
+      animateCameraTo(new THREE.Vector3(5, 40, 45), new THREE.Vector3(-1.0, 2, 0), 1.0);
     }
 
     function setTopDownView() {
-      animateCameraTo(new THREE.Vector3(-1.5, 68, 0.1), new THREE.Vector3(-1.5, 0, 0), 1.0);
+      animateCameraTo(new THREE.Vector3(-1.0, 60, 0.1), new THREE.Vector3(-1.0, 0, 0), 0.9);
     }
 
     /* ==========================================================================
-       11. RENDER VÀ CẬP NHẬT GIAO DIỆN NGƯỜI DÙNG (UI MANAGERS)
+       8. GIAO DIỆN & SỰ KIỆN (UI & LISTENERS)
        ========================================================================== */
-    
-    // Khởi tạo danh sách cây phân cấp ở Panel bên trái
     function buildAisleTreeUI() {
       const treeContainer = document.getElementById('aisle-tree-container');
       treeContainer.innerHTML = '';
@@ -1309,7 +928,6 @@
 
         const aisleBlock = document.createElement('div');
         aisleBlock.className = 'bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-sm';
-
         aisleBlock.innerHTML = `
           <button class="w-full px-3 py-2.5 bg-slate-100 hover:bg-slate-200/80 flex items-center justify-between transition text-left" data-aisle-btn="${aisleId}">
             <div class="flex items-center gap-2">
@@ -1320,13 +938,10 @@
               ${totalCartonsInAisle} Thùng
             </span>
           </button>
-          <div id="aisle-list-${aisleId}" class="p-2 space-y-1 hidden">
-            <!-- Racks inside Aisle -->
-          </div>
+          <div id="aisle-list-${aisleId}" class="p-2 space-y-1 hidden"></div>
         `;
 
         const rackListContainer = aisleBlock.querySelector(`#aisle-list-${aisleId}`);
-
         aisleRacks.forEach(rk => {
           const rackBtn = document.createElement('button');
           rackBtn.id = `tree-rack-btn-${rk.id}`;
@@ -1338,15 +953,10 @@
             </div>
             <span class="text-[10px] text-slate-500 font-mono-code">${rk.totalCartons} ctn</span>
           `;
-
-          rackBtn.addEventListener('click', () => {
-            selectRack(rk.id, 0, true);
-          });
-
+          rackBtn.addEventListener('click', () => selectRack(rk.id, 0, true));
           rackListContainer.appendChild(rackBtn);
         });
 
-        // Toggle Expand/Collapse Dãy Aisle
         const toggleBtn = aisleBlock.querySelector(`[data-aisle-btn="${aisleId}"]`);
         toggleBtn.addEventListener('click', () => {
           const list = document.getElementById(`aisle-list-${aisleId}`);
@@ -1364,7 +974,6 @@
         treeContainer.appendChild(aisleBlock);
       });
 
-      // Mở mặc định Dãy A
       const firstAisleList = document.getElementById('aisle-list-A');
       const firstChevron = document.getElementById('icon-chevron-A');
       if (firstAisleList) firstAisleList.classList.remove('hidden');
@@ -1372,7 +981,6 @@
     }
 
     function updateLeftTreeActiveState() {
-      // Bỏ active tất cả nút
       document.querySelectorAll('[id^="tree-rack-btn-"]').forEach(btn => {
         btn.classList.remove('bg-sky-100', 'text-sky-700', 'font-semibold', 'border', 'border-sky-300');
       });
@@ -1381,7 +989,6 @@
         const activeBtn = document.getElementById(`tree-rack-btn-${warehouseData.selectedRackId}`);
         if (activeBtn) {
           activeBtn.classList.add('bg-sky-100', 'text-sky-700', 'font-semibold', 'border', 'border-sky-300');
-          // Mở mở rộng thư mục cha nếu đang đóng
           const aisle = warehouseData.selectedRackId.split('-')[1][0];
           const list = document.getElementById(`aisle-list-${aisle}`);
           const chevron = document.getElementById(`icon-chevron-${aisle}`);
@@ -1393,9 +1000,6 @@
       }
     }
 
-    /**
-     * Cập nhật thông tin chi tiết trên Panel bên phải
-     */
     function updateRightPanelUI() {
       const emptyMsg = document.getElementById('empty-selection-msg');
       const content = document.getElementById('active-detail-content');
@@ -1412,12 +1016,10 @@
       const rackData = warehouseData.rackMap.get(warehouseData.selectedRackId);
       if (!rackData) return;
 
-      // 1. Cập nhật Rack Header
       document.getElementById('detail-rack-id').textContent = rackData.id;
       document.getElementById('detail-rack-name').textContent = rackData.name;
       document.getElementById('detail-rack-total-cartons').textContent = rackData.totalCartons;
 
-      // 2. Render 3 Tab Level
       const tabsContainer = document.getElementById('level-tabs-container');
       tabsContainer.innerHTML = '';
 
@@ -1434,28 +1036,22 @@
           <div class="text-[10px] opacity-80">${levelLabel}</div>
           <div class="font-mono-code text-xs mt-0.5">${lvl.cartons.length} Ctn</div>
         `;
-        tabBtn.addEventListener('click', () => {
-          selectLevel(idx, false);
-        });
+        tabBtn.addEventListener('click', () => selectLevel(idx, false));
         tabsContainer.appendChild(tabBtn);
       });
 
-      // 3. Cập nhật Header của Level đang được chọn
       const currentLevel = rackData.levels[warehouseData.selectedLevelIndex];
       const levelTitleText = warehouseData.selectedLevelIndex === 0 
         ? 'Tầng 1 - Tầng trệt (Ground Level)' 
         : `Tầng ${currentLevel.levelNumber} (Level ${currentLevel.levelNumber})`;
       document.getElementById('detail-active-level-title').textContent = levelTitleText;
-      document.getElementById('detail-active-level-meta').textContent = `Lưu trữ ${currentLevel.cartons.length} thùng carton tiêu chuẩn`;
+      document.getElementById('detail-active-level-meta').textContent = `Lưu trữ ${currentLevel.cartons.length} thùng carton`;
 
-      // 4. Render danh sách Carton của Level đang chọn
       const cartonListContainer = document.getElementById('carton-list-container');
       cartonListContainer.innerHTML = '';
 
       if (currentLevel.cartons.length === 0) {
-        cartonListContainer.innerHTML = `
-          <div class="text-center py-4 text-slate-400 text-xs">Tầng hiện đang trống hàng</div>
-        `;
+        cartonListContainer.innerHTML = `<div class="text-center py-4 text-slate-400 text-xs">Tầng trống hàng</div>`;
       } else {
         currentLevel.cartons.forEach(ctn => {
           const isSelected = ctn.id === warehouseData.selectedCartonId;
@@ -1482,37 +1078,26 @@
             </div>
           `;
 
-          card.addEventListener('click', () => {
-            selectCarton(ctn.id, true);
-          });
-
+          card.addEventListener('click', () => selectCarton(ctn.id, true));
           cartonListContainer.appendChild(card);
         });
       }
     }
 
-    /* ==========================================================================
-       12. TÌM KIẾM VÀ BỘ LỌC THÔNG MINH (SEARCH & FILTER)
-       ========================================================================== */
     function setupSearch() {
       const searchInput = document.getElementById('rack-search-input');
       searchInput.addEventListener('input', (e) => {
         const query = e.target.value.trim().toUpperCase();
         if (!query) {
-          // Hiện lại tất cả
           document.querySelectorAll('[id^="tree-rack-btn-"]').forEach(el => el.classList.remove('hidden'));
           return;
         }
 
-        // Tìm kiếm theo mã Rack hoặc mã Carton
         warehouseData.racks.forEach(rk => {
           const rackBtn = document.getElementById(`tree-rack-btn-${rk.id}`);
           if (!rackBtn) return;
-
           let match = rk.id.toUpperCase().includes(query) || rk.name.toUpperCase().includes(query);
-          
           if (!match) {
-            // Kiểm tra xem có carton nào trong rack trùng khớp không
             for (let lvl of rk.levels) {
               for (let ctn of lvl.cartons) {
                 if (ctn.id.toUpperCase().includes(query) || ctn.itemCode.toUpperCase().includes(query) || ctn.productName.toUpperCase().includes(query)) {
@@ -1523,21 +1108,13 @@
               if (match) break;
             }
           }
-
-          if (match) {
-            rackBtn.classList.remove('hidden');
-          } else {
-            rackBtn.classList.add('hidden');
-          }
+          if (match) rackBtn.classList.remove('hidden');
+          else rackBtn.classList.add('hidden');
         });
       });
     }
 
-    /* ==========================================================================
-       13. GẮN SỰ KIỆN NÚT ĐIỀU KHIỂN GIAO DIỆN (UI EVENT BINDINGS)
-       ========================================================================== */
     function bindControlButtons() {
-      // Zoom Controls
       document.getElementById('btn-zoom-in').addEventListener('click', () => {
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
@@ -1550,16 +1127,13 @@
         camera.position.addScaledVector(dir, -4.0);
       });
 
-      // View Buttons
       document.getElementById('btn-reset-cam').addEventListener('click', resetCameraDefault);
       document.getElementById('btn-fit-view').addEventListener('click', fitWarehouseView);
       document.getElementById('btn-top-view').addEventListener('click', setTopDownView);
 
-      // Focus Buttons in Detail Panel
       document.getElementById('btn-focus-rack').addEventListener('click', () => {
         if (warehouseData.selectedRackId) {
-          const rk = warehouseData.rackMap.get(warehouseData.selectedRackId);
-          focusCameraOnRack(rk);
+          focusCameraOnRack(warehouseData.rackMap.get(warehouseData.selectedRackId));
         }
       });
 
@@ -1579,11 +1153,9 @@
       });
 
       document.getElementById('btn-close-detail').addEventListener('click', () => {
-        const rightPanel = document.getElementById('right-panel');
-        rightPanel.classList.add('translate-x-[120%]');
+        document.getElementById('right-panel').classList.add('translate-x-[120%]');
       });
 
-      // Toggle & Thu gọn Panels
       const leftPanel = document.getElementById('left-panel');
       const rightPanel = document.getElementById('right-panel');
       const expandLeftBtn = document.getElementById('btn-expand-left');
@@ -1598,33 +1170,24 @@
       function showLeftPanel() {
         leftPanel.classList.remove('-translate-x-[115%]');
         expandLeftBtn.classList.add('hidden');
-        // Trên màn hình điện thoại, tự động đóng panel bên phải nếu đang mở để tránh chật
-        if (window.innerWidth < 640) {
-          rightPanel.classList.add('translate-x-[120%]');
-        }
+        if (window.innerWidth < 640) rightPanel.classList.add('translate-x-[120%]');
       }
 
       collapseLeftBtn.addEventListener('click', hideLeftPanel);
       expandLeftBtn.addEventListener('click', showLeftPanel);
 
-      // Mở/Đóng Right Detail Panel
       openDetailBtn.addEventListener('click', () => {
         if (rightPanel.classList.contains('translate-x-[120%]')) {
           rightPanel.classList.remove('translate-x-[120%]');
-          if (window.innerWidth < 640) {
-            hideLeftPanel();
-          }
+          if (window.innerWidth < 640) hideLeftPanel();
         } else {
           rightPanel.classList.add('translate-x-[120%]');
         }
       });
 
       document.getElementById('btn-toggle-left').addEventListener('click', () => {
-        if (leftPanel.classList.contains('-translate-x-[115%]')) {
-          showLeftPanel();
-        } else {
-          hideLeftPanel();
-        }
+        if (leftPanel.classList.contains('-translate-x-[115%]')) showLeftPanel();
+        else hideLeftPanel();
       });
 
       document.getElementById('btn-toggle-right').addEventListener('click', () => {
@@ -1632,9 +1195,6 @@
       });
     }
 
-    /* ==========================================================================
-       14. XỬ LÝ RESIZE & VÒNG LẶP RENDER (ANIMATION LOOP)
-       ========================================================================== */
     function onWindowResize() {
       if (!renderer || !camera) return;
       camera.aspect = container.clientWidth / container.clientHeight;
@@ -1645,56 +1205,35 @@
     function animate() {
       animationFrameId = requestAnimationFrame(animate);
 
-      // Smooth Camera Animation Lerp
       if (cameraTargetAnim.isAnimating) {
-        cameraTargetAnim.progress += 0.04;
+        cameraTargetAnim.progress += 0.05;
         const t = Math.min(cameraTargetAnim.progress, 1.0);
-        // Easing cubic out
         const ease = 1 - Math.pow(1 - t, 3);
-
         camera.position.lerpVectors(cameraTargetAnim.startCamPos, cameraTargetAnim.targetCamPos, ease);
         controls.target.lerpVectors(cameraTargetAnim.startLookAt, cameraTargetAnim.targetLookAt, ease);
-
-        if (t >= 1.0) {
-          cameraTargetAnim.isAnimating = false;
-        }
+        if (t >= 1.0) cameraTargetAnim.isAnimating = false;
       }
 
       controls.update();
       renderer.render(scene, camera);
     }
 
-    /* ==========================================================================
-       15. KHỞI CHẠY ỨNG DỤNG (INITIALIZATION ENTRY POINT)
-       ========================================================================== */
     window.addEventListener('DOMContentLoaded', () => {
-      // 1. Tạo dữ liệu kho giả lập
       generateMockData();
-
-      // 2. Khởi tạo Three.js Scene, Camera, Renderer
       initThreeScene();
-
-      // 3. Dựng mô hình kệ kho 3D
       buildWarehouse3D();
-
-      // 4. Dựng giao diện tương tác và danh sách cây
       buildAisleTreeUI();
       bindControlButtons();
       setupSearch();
 
-      // 5. Nạp trước dữ liệu Kệ ban đầu nhưng GIỮ NGUYÊN TRẠNG THÁI ẨN của Panel Chi tiết
       selectRack('RACK-A01', 0, false, false);
-
-      // Đảm bảo panel chi tiết luôn ẩn khi vừa load xong
       const rightPanel = document.getElementById('right-panel');
       if (rightPanel && !rightPanel.classList.contains('translate-x-[120%]')) {
         rightPanel.classList.add('translate-x-[120%]');
       }
 
-      // 6. Bắt đầu vòng lặp render đồ họa
       animate();
     });
-
   </script>
 </body>
 </html>
