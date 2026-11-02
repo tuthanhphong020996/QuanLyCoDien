@@ -122,8 +122,6 @@ tailwind.config = {
     let currentHistoryHeaders = [];
     let selectedHistoryHeader = null;
 
-    // QR Scanner
-    let html5QrCode;
 
     // --- 2. HÀM ĐỒNG BỘ VÀ KHỞI TẠO (INIT) ---
     function init() {
@@ -753,13 +751,22 @@ function formatDate(date) {
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
+// QR Scanner
+let html5QrCode = null;
+let isScanning = false;
 async function scanBarcode() {
     console.log("Bắt đầu quét QR/Barcode");
-     document.getElementById("reader").style.display = "block";
+      if (isScanning) return;
 
-    html5QrCode = new Html5Qrcode("reader");
+    document.getElementById("reader").style.display = "block";
 
     try {
+        if (!html5QrCode) {
+            html5QrCode = new Html5Qrcode("reader");
+        }
+
+        isScanning = true;
+
         await html5QrCode.start(
             { facingMode: "environment" },
             {
@@ -767,20 +774,24 @@ async function scanBarcode() {
                 qrbox: { width: 250, height: 150 }
             },
             async (decodedText) => {
+                if (!isScanning) return;
+
+                isScanning = false;
+
                 console.log("Barcode:", decodedText);
 
-                alert("Mã quét được: " + decodedText);
-
                 await html5QrCode.stop();
-                html5QrCode.clear();
-
                 document.getElementById("reader").style.display = "none";
-                 openInspectionHistoryModal(parseInt(decodedText, 10));
 
+                openInspectionHistoryModal(parseInt(decodedText, 10));
             }
         );
+
     } catch (err) {
+        isScanning = false;
         console.error("Không thể mở camera:", err);
+
+        document.getElementById("reader").style.display = "none";
         alert("Không thể mở camera!");
     }
 }
