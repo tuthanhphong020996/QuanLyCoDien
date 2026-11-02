@@ -12,7 +12,7 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -195,6 +195,10 @@
             <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-1.5">
                 <div class="flex flex-wrap items-center gap-1.5 w-full sm:w-auto text-xs">
                     <input type="text" id="eq2-filter-search" oninput="renderEquipmentTab()" placeholder="Tìm tên máy, mã, vị trí..." class="px-2 py-1 border border-slate-300 rounded bg-slate-50 w-full sm:w-48 focus:outline-none">
+                     <button onclick="scanBarcode()" class="bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-bold text-sm rounded-xl shadow-xs flex items-center gap-2">
+                        <i class="fa-solid fa-qrcode text-base"></i>
+                        <span>Quét QR</span>
+                    </button>
                     <select id="eq2-filter-comp" onchange="renderEquipmentTab()" class="border border-slate-300 rounded px-2 py-1 bg-slate-50 focus:outline-none">
                         <option value="ALL">Mọi phân xưởng</option>
                         <option value="Gỗ 1">Gỗ 1</option>
@@ -320,6 +324,7 @@
                 </div>
             </div>
         </div>
+        <div id="reader" style="width: 100%; display: none;"></div>
     </main>
 
     <!-- ======================================================== -->

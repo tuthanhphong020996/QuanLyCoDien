@@ -122,6 +122,9 @@ tailwind.config = {
     let currentHistoryHeaders = [];
     let selectedHistoryHeader = null;
 
+    // QR Scanner
+    let html5QrCode;
+
     // --- 2. HÀM ĐỒNG BỘ VÀ KHỞI TẠO (INIT) ---
     function init() {
         document.getElementById('filter-date').value = filterDate;
@@ -748,4 +751,34 @@ function formatDate(date) {
     if (isNaN(d)) return '';
 
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+async function scanBarcode() {
+    console.log("Bắt đầu quét QR/Barcode");
+     document.getElementById("reader").style.display = "block";
+
+    html5QrCode = new Html5Qrcode("reader");
+
+    try {
+        await html5QrCode.start(
+            { facingMode: "environment" },
+            {
+                fps: 10,
+                qrbox: { width: 250, height: 150 }
+            },
+            async (decodedText) => {
+                console.log("Barcode:", decodedText);
+
+                alert("Mã quét được: " + decodedText);
+
+                await html5QrCode.stop();
+                html5QrCode.clear();
+
+                document.getElementById("reader").style.display = "none";
+            }
+        );
+    } catch (err) {
+        console.error("Không thể mở camera:", err);
+        alert("Không thể mở camera!");
+    }
 }
