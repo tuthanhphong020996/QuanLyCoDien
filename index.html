@@ -142,6 +142,10 @@
       <button id="btn-top-view" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition flex items-center gap-1.5" title="Góc nhìn từ trên xuống (Top-down)">
         <i class="fa-solid fa-chess-board text-amber-600"></i> Mặt Bằng
       </button>
+      <div class="h-5 w-px bg-slate-200 mx-1"></div>
+      <button id="btn-toggle-labels" class="px-3 py-1.5 rounded-lg text-xs font-medium text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 transition flex items-center gap-1.5" title="Bật/Tắt hiển thị số thứ tự 3D">
+        <i class="fa-solid fa-tags text-sky-600"></i> Nhãn 3D
+      </button>
     </div>
 
     <!-- FLOATING RAYCAST HOVER TOOLTIP -->
@@ -424,6 +428,8 @@
     let scene, camera, renderer, controls;
     let raycaster, mouse;
     let animationFrameId = null;
+    let labelsGroup = null; // Quản lý toàn bộ nhãn số 3D
+    let labelsVisible = true;
 
     const cameraTargetAnim = {
       isAnimating: false,
@@ -520,6 +526,65 @@
       const grid = new THREE.GridHelper(floorSize, 40, 0x94a3b8, 0xcfd8e3);
       grid.position.y = 0.01;
       scene.add(grid);
+    }
+
+    /* ==========================================================================
+       4.1. HÀM TẠO NHÃN SỐ THỨ TỰ 3D BẰNG CANVAS SPRITE (SIÊU NHẸ)
+       ========================================================================== */
+    function makeTextSprite(message, opts = {}) {
+      const fontface = opts.fontface || "Inter, -apple-system, sans-serif";
+      const fontsize = opts.fontsize || 42;
+      const borderThickness = opts.borderThickness || 3;
+      const borderColor = opts.borderColor || { r: 14, g: 116, b: 144, a: 1.0 };
+      const backgroundColor = opts.backgroundColor || { r: 255, g: 255, b: 255, a: 0.95 };
+      const textColor = opts.textColor || "#0f172a";
+      const scaleX = opts.scaleX || 1.8;
+      const scaleY = opts.scaleY || 0.65;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 100;
+      const context = canvas.getContext('2d');
+
+      context.font = `bold ${fontsize}px ${fontface}`;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+
+      // Vẽ khung nền bo góc (Badge)
+      const x = borderThickness / 2;
+      const y = borderThickness / 2;
+      const w = canvas.width - borderThickness;
+      const h = canvas.height - borderThickness;
+      const r = 16;
+
+      context.beginPath();
+      context.moveTo(x + r, y);
+      context.lineTo(x + w - r, y);
+      context.quadraticCurveTo(x + w, y, x + w, y + r);
+      context.lineTo(x + w, y + h - r);
+      context.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      context.lineTo(x + r, y + h);
+      context.quadraticCurveTo(x, y + h, x, y + h - r);
+      context.lineTo(x, y + r);
+      context.quadraticCurveTo(x, y, x + r, y);
+      context.closePath();
+
+      context.fillStyle = `rgba(${backgroundColor.r},${backgroundColor.g},${backgroundColor.b},${backgroundColor.a})`;
+      context.fill();
+      context.lineWidth = borderThickness;
+      context.strokeStyle = `rgba(${borderColor.r},${borderColor.g},${borderColor.b},${borderColor.a})`;
+      context.stroke();
+
+      // Vẽ chữ số
+      context.fillStyle = textColor;
+      context.fillText(message, canvas.width / 2, canvas.height / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: true });
+      const sprite = new THREE.Sprite(spriteMaterial);
+      sprite.scale.set(scaleX, scaleY, 1.0);
+      return sprite;
     }
 
     /* ==========================================================================
@@ -620,6 +685,36 @@
         layoutOptimizedCartons(rackGroup, lvlData, rackData);
       });
 
+      // Gắn nhãn số Rack trên đỉnh dầm (ví dụ: A-01, B-03)
+      const cleanRackCode = rackData.id.replace('RACK-', '');
+      const rackBadge = makeTextSprite(cleanRackCode, {
+        fontsize: 46,
+        borderColor: { r: 2, g: 132, b: 199, a: 0.9 }, // Sky Blue
+        backgroundColor: { r: 255, g: 255, b: 255, a: 0.95 },
+        textColor: "#0369a1",
+        scaleX: 1.35,
+        scaleY: 0.52
+      });
+      rackBadge.position.set(0, h + 0.35, 0);
+      rackBadge.userData = { type: 'RACK_LABEL', rackId: rackData.id };
+      rackGroup.add(rackBadge);
+
+      // Gắn nhãn số tầng (T1, T2, T3) bên mép ngoài cột trụ
+      for (let lvl = 1; lvl <= 3; lvl++) {
+        const yBeam = 0.15 + (lvl - 1) * RACK_CONFIG.levelHeight;
+        const lvlBadge = makeTextSprite(`T${lvl}`, {
+          fontsize: 50,
+          borderColor: { r: 238, g: 88, b: 27, a: 0.8 }, // Orange Beam
+          backgroundColor: { r: 255, g: 255, b: 255, a: 0.9 },
+          textColor: "#c2410c",
+          scaleX: 0.65,
+          scaleY: 0.45
+        });
+        lvlBadge.position.set(-halfW - 0.25, yBeam + 0.25, d / 2);
+        lvlBadge.userData = { type: 'LEVEL_LABEL', rackId: rackData.id, levelNumber: lvl };
+        rackGroup.add(lvlBadge);
+      }
+
       rackData.threeGroup = rackGroup;
       return rackGroup;
     }
@@ -671,6 +766,9 @@
       const warehouseGroup = new THREE.Group();
       warehouseGroup.name = "WAREHOUSE_MAIN_GROUP";
 
+      labelsGroup = new THREE.Group();
+      labelsGroup.name = "WAREHOUSE_LABELS_GROUP";
+
       const totalAisles = RACK_CONFIG.aisles.length;
       const racksPerAisle = RACK_CONFIG.racksPerAisle;
       const totalWidthX = (totalAisles - 1) * RACK_CONFIG.aisleSpacingX;
@@ -678,6 +776,7 @@
       const startX = -totalWidthX / 2;
       const startZ = -totalDepthZ / 2 + (RACK_CONFIG.rackWidth / 2);
 
+      // 1. Dựng các Rack và gán số
       warehouseData.racks.forEach((rack) => {
         const aisleIndex = RACK_CONFIG.aisles.indexOf(rack.aisle);
         const rackIndex = rack.indexInAisle - 1;
@@ -690,7 +789,38 @@
         warehouseGroup.add(rack3D);
       });
 
+      // 2. Dựng bảng tên lớn đầu mỗi dãy (Dãy A, Dãy B, Dãy C)
+      RACK_CONFIG.aisles.forEach((aisleId, idx) => {
+        const posX = startX + idx * RACK_CONFIG.aisleSpacingX;
+        const frontZ = startZ - 2.8;
+
+        const aisleSign = makeTextSprite(`DÃY ${aisleId}`, {
+          fontsize: 52,
+          borderColor: { r: 15, g: 118, b: 110, a: 1.0 }, // Emerald/Teal
+          backgroundColor: { r: 13, g: 148, b: 136, a: 0.95 },
+          textColor: "#ffffff",
+          scaleX: 2.8,
+          scaleY: 1.0
+        });
+        aisleSign.position.set(posX, 5.8, frontZ);
+        labelsGroup.add(aisleSign);
+
+        // Biển tương tự ở cuối dãy
+        const backZ = startZ + racksPerAisle * (RACK_CONFIG.rackWidth + RACK_CONFIG.rackMarginZ) + 0.8;
+        const aisleSignBack = makeTextSprite(`DÃY ${aisleId}`, {
+          fontsize: 52,
+          borderColor: { r: 15, g: 118, b: 110, a: 1.0 },
+          backgroundColor: { r: 13, g: 148, b: 136, a: 0.95 },
+          textColor: "#ffffff",
+          scaleX: 2.8,
+          scaleY: 1.0
+        });
+        aisleSignBack.position.set(posX, 5.8, backZ);
+        labelsGroup.add(aisleSignBack);
+      });
+
       scene.add(warehouseGroup);
+      scene.add(labelsGroup);
     }
 
     /* ==========================================================================
@@ -1159,6 +1289,28 @@
       document.getElementById('btn-reset-cam').addEventListener('click', resetCameraDefault);
       document.getElementById('btn-fit-view').addEventListener('click', fitWarehouseView);
       document.getElementById('btn-top-view').addEventListener('click', setTopDownView);
+
+      // Nút Bật/Tắt hiển thị nhãn số 3D
+      const btnToggleLabels = document.getElementById('btn-toggle-labels');
+      btnToggleLabels.addEventListener('click', () => {
+        labelsVisible = !labelsVisible;
+        if (labelsGroup) labelsGroup.visible = labelsVisible;
+
+        // Ẩn/hiện luôn các nhãn số nhỏ gắn trên từng Rack
+        warehouseData.racks.forEach(rk => {
+          if (rk.threeGroup) {
+            rk.threeGroup.children.forEach(child => {
+              if (child.isSprite) child.visible = labelsVisible;
+            });
+          }
+        });
+
+        if (labelsVisible) {
+          btnToggleLabels.className = "px-3 py-1.5 rounded-lg text-xs font-medium text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 transition flex items-center gap-1.5";
+        } else {
+          btnToggleLabels.className = "px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 bg-white border border-slate-300 hover:bg-slate-100 transition flex items-center gap-1.5";
+        }
+      });
 
       document.getElementById('btn-focus-rack').addEventListener('click', () => {
         if (warehouseData.selectedRackId) {
