@@ -63,6 +63,29 @@
     .rack-active-glow {
       animation: pulse-glow 2s infinite ease-in-out;
     }
+    #right-panel {
+      width: min(24rem, calc(100vw - 1.5rem));
+      max-height: calc(100% - 5rem);
+      min-height: 0;
+    }
+    #right-panel::before {
+      content: "";
+      position: absolute;
+      top: 28px;
+      width: 14px;
+      height: 14px;
+      background: rgba(255, 255, 255, 0.97);
+      border-top: 1px solid #bae6fd;
+      border-left: 1px solid #bae6fd;
+      transform: rotate(-45deg);
+    }
+    #right-panel[data-placement="right"]::before {
+      left: -8px;
+    }
+    #right-panel[data-placement="left"]::before {
+      right: -8px;
+      transform: rotate(135deg);
+    }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-800 h-screen w-screen flex flex-col antialiased">
@@ -213,12 +236,12 @@
     </button>
 
     <!-- ================= RIGHT PANEL: DETAILED INSPECTION (MẶC ĐỊNH ẨN & RESPONSIVE) ================= -->
-    <aside id="right-panel" class="absolute top-3 right-3 bottom-16 sm:bottom-20 w-[calc(100vw-1.5rem)] sm:w-96 max-w-md bg-white/95 backdrop-blur-md rounded-xl border border-slate-200 shadow-2xl flex flex-col z-20 transition-transform duration-300 translate-x-[120%]">
+    <aside id="right-panel" data-placement="right" class="absolute hidden bg-white/95 backdrop-blur-md rounded-xl border border-sky-200 shadow-xl flex flex-col z-20">
       
       <!-- Panel Header -->
-      <div class="p-3.5 border-b border-slate-200 flex items-center justify-between">
+      <div class="p-3 border-b border-slate-200 flex items-center justify-between shrink-0">
         <div class="flex items-center gap-2 font-semibold text-sm text-sky-700">
-          <i class="fa-solid fa-clipboard-check"></i> Chi Tiết Rack & Hàng Hóa
+          <i class="fa-solid fa-thumbtack"></i> Ghi chú chi tiết
         </div>
         <button id="btn-close-detail" class="text-slate-400 hover:text-slate-700 text-sm p-1.5 rounded-lg hover:bg-slate-100 transition">
           <i class="fa-solid fa-xmark text-base"></i>
@@ -226,7 +249,7 @@
       </div>
 
       <!-- Panel Body -->
-      <div id="detail-panel-body" class="flex-1 overflow-y-auto p-4 space-y-4">
+      <div id="detail-panel-body" class="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
         
         <!-- Empty State Prompt -->
         <div id="empty-selection-msg" class="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
@@ -328,7 +351,7 @@
       </div>
 
       <!-- Bottom Quick Actions -->
-      <div id="detail-footer" class="p-3 border-t border-slate-200 bg-slate-50 rounded-b-xl flex items-center justify-between text-xs">
+      <div id="detail-footer" class="p-3 border-t border-slate-200 bg-slate-50 rounded-b-xl flex items-center justify-between text-xs shrink-0">
         <button id="btn-focus-rack" class="flex-1 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-medium transition flex items-center justify-center gap-1.5 mr-2 shadow-sm">
           <i class="fa-solid fa-video"></i> Focus Rack 3D
         </button>
@@ -1110,6 +1133,50 @@
       }
     }
 
+    function positionDetailComment() {
+      const panel = document.getElementById('right-panel');
+      if (!panel || panel.classList.contains('hidden') || !renderer || !camera) return;
+
+      const bounds = new THREE.Box3();
+      if (warehouseData.selectedCartonId) {
+        const carton = warehouseData.cartonMap.get(warehouseData.selectedCartonId);
+        if (carton && carton.threeMesh) {
+          carton.threeMesh.getWorldPosition(bounds.min);
+          bounds.max.copy(bounds.min);
+          bounds.max.y += carton.size.height;
+        }
+      } else if (warehouseData.selectedRackId) {
+        const rack = warehouseData.rackMap.get(warehouseData.selectedRackId);
+        if (rack && rack.threeGroup) bounds.setFromObject(rack.threeGroup);
+      } else if (warehouseData.selectedAisleId) {
+        bounds.makeEmpty();
+        warehouseData.racks
+          .filter(rack => rack.aisle === warehouseData.selectedAisleId && rack.threeGroup)
+          .forEach(rack => bounds.expandByObject(rack.threeGroup));
+      } else {
+        return;
+      }
+
+      if (bounds.isEmpty()) return;
+      const anchor = bounds.getCenter(new THREE.Vector3());
+      anchor.y = bounds.max.y + 0.15;
+      anchor.project(camera);
+
+      const viewportWidth = container.clientWidth;
+      const viewportHeight = container.clientHeight;
+      const anchorX = (anchor.x + 1) * viewportWidth / 2;
+      const anchorY = (1 - anchor.y) * viewportHeight / 2;
+      const panelWidth = panel.offsetWidth;
+      const panelHeight = panel.offsetHeight;
+      const placeRight = anchorX + panelWidth + 28 <= viewportWidth - 12;
+      const left = placeRight ? anchorX + 28 : anchorX - panelWidth - 28;
+      const top = anchorY - Math.min(panelHeight / 2, 120);
+
+      panel.dataset.placement = placeRight ? 'right' : 'left';
+      panel.style.left = `${Math.max(12, Math.min(left, viewportWidth - panelWidth - 12))}px`;
+      panel.style.top = `${Math.max(12, Math.min(top, viewportHeight - panelHeight - 12))}px`;
+    }
+
     function selectRack(rackId, levelIdx = 0, shouldFocusCamera = false, openPanel = true) {
       const rackData = warehouseData.rackMap.get(rackId);
       if (!rackData) return;
@@ -1136,10 +1203,11 @@
 
       if (openPanel) {
         const rightPanel = document.getElementById('right-panel');
-        rightPanel.classList.remove('translate-x-[120%]');
+        rightPanel.classList.remove('hidden');
       }
       updateRightPanelUI();
       updateLeftTreeActiveState();
+      positionDetailComment();
     }
 
     function selectAisle(aisleId, openPanel = true) {
@@ -1151,10 +1219,11 @@
       clearHighlights();
       updateRackSceneVisibility();
       if (openPanel) {
-        document.getElementById('right-panel').classList.remove('translate-x-[120%]');
+        document.getElementById('right-panel').classList.remove('hidden');
       }
       updateRightPanelUI();
       updateLeftTreeActiveState();
+      positionDetailComment();
     }
 
     function selectLevel(levelIdx, shouldFocusCamera = false) {
@@ -1171,6 +1240,7 @@
         focusCameraOnLevel(warehouseData.selectedRackId, levelIdx);
       }
       updateRightPanelUI();
+      positionDetailComment();
     }
 
     function selectCarton(cartonId, shouldFocusCamera = true) {
@@ -1206,9 +1276,10 @@
       }
 
       const rightPanel = document.getElementById('right-panel');
-      rightPanel.classList.remove('translate-x-[120%]');
+      rightPanel.classList.remove('hidden');
       updateRightPanelUI();
       updateLeftTreeActiveState();
+      positionDetailComment();
     }
 
     function animateCameraTo(targetPos, targetLookAt, duration = 0.8) {
@@ -1700,7 +1771,7 @@
       });
 
       document.getElementById('btn-close-detail').addEventListener('click', () => {
-        document.getElementById('right-panel').classList.add('translate-x-[120%]');
+        document.getElementById('right-panel').classList.add('hidden');
       });
 
       const leftPanel = document.getElementById('left-panel');
@@ -1717,18 +1788,19 @@
       function showLeftPanel() {
         leftPanel.classList.remove('-translate-x-[115%]');
         expandLeftBtn.classList.add('hidden');
-        if (window.innerWidth < 640) rightPanel.classList.add('translate-x-[120%]');
+        if (window.innerWidth < 640) rightPanel.classList.add('hidden');
       }
 
       collapseLeftBtn.addEventListener('click', hideLeftPanel);
       expandLeftBtn.addEventListener('click', showLeftPanel);
 
       openDetailBtn.addEventListener('click', () => {
-        if (rightPanel.classList.contains('translate-x-[120%]')) {
-          rightPanel.classList.remove('translate-x-[120%]');
+        if (rightPanel.classList.contains('hidden')) {
+          rightPanel.classList.remove('hidden');
+          positionDetailComment();
           if (window.innerWidth < 640) hideLeftPanel();
         } else {
-          rightPanel.classList.add('translate-x-[120%]');
+          rightPanel.classList.add('hidden');
         }
       });
 
@@ -1738,7 +1810,8 @@
       });
 
       document.getElementById('btn-toggle-right').addEventListener('click', () => {
-        rightPanel.classList.toggle('translate-x-[120%]');
+        rightPanel.classList.toggle('hidden');
+        positionDetailComment();
       });
     }
 
@@ -1764,6 +1837,7 @@
       }
 
       controls.update();
+      positionDetailComment();
       renderer.render(scene, camera);
     }
 
@@ -1777,9 +1851,7 @@
 
       selectRack('RACK-A01', 0, false, false);
       const rightPanel = document.getElementById('right-panel');
-      if (rightPanel && !rightPanel.classList.contains('translate-x-[120%]')) {
-        rightPanel.classList.add('translate-x-[120%]');
-      }
+      if (rightPanel) rightPanel.classList.add('hidden');
 
       animate();
     });
