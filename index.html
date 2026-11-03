@@ -173,11 +173,20 @@
           <i class="fa-solid fa-search absolute left-2.5 top-2 text-[11px] text-slate-400"></i>
           <input type="text" id="rack-search-input" placeholder="Tìm Rack hoặc Mã Thùng..." class="w-full bg-white text-slate-800 text-xs rounded-lg pl-7 pr-2.5 py-1.5 border border-slate-300 focus:border-sky-500 focus:outline-none transition shadow-inner">
         </div>
+        <select id="customer-filter" class="w-full mt-2 bg-white text-slate-700 text-xs rounded-lg px-2.5 py-2 border border-slate-300 focus:border-sky-500 focus:outline-none transition">
+          <option value="">Tất cả khách hàng</option>
+        </select>
+        <p id="rack-filter-result" class="text-[10px] text-slate-500 mt-1.5"></p>
       </div>
 
       <!-- Tree List Container -->
       <div id="aisle-tree-container" class="flex-1 overflow-y-auto p-2.5 space-y-2.5">
         <!-- Rendered dynamically by JavaScript -->
+      </div>
+
+      <div class="p-2.5 border-t border-slate-200 bg-white">
+        <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Màu thùng theo khách hàng</div>
+        <div id="customer-color-legend" class="grid grid-cols-2 gap-x-2 gap-y-1.5"></div>
       </div>
 
       <!-- Legend Guide -->
@@ -279,6 +288,11 @@
             </div>
           </div>
 
+          <div class="p-3 rounded-xl bg-white border border-slate-200">
+            <h3 class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Khách hàng trên rack</h3>
+            <div id="rack-customer-list" class="flex flex-wrap gap-2"></div>
+          </div>
+
           <!-- Level Selector Tabs -->
           <div>
             <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Chọn tầng để kiểm tra (3 Tầng):</label>
@@ -372,6 +386,15 @@
       { name: "Pin Lithium Storage Module", code: "ITM-BAT-320", category: "Energy" }
     ];
 
+    const SAMPLE_CUSTOMERS = [
+      { id: 'CUSTOMER-01', name: 'An Phát', color: '#ef4444' },
+      { id: 'CUSTOMER-02', name: 'Minh Long', color: '#8b5cf6' },
+      { id: 'CUSTOMER-03', name: 'Đại Việt', color: '#0891b2' },
+      { id: 'CUSTOMER-04', name: 'Hòa Bình', color: '#ea580c' },
+      { id: 'CUSTOMER-05', name: 'Tân Tiến', color: '#16a34a' }
+    ];
+    const sampleCustomerMap = new Map(SAMPLE_CUSTOMERS.map(customer => [customer.id, customer]));
+
     const warehouseData = {
       racks: [],
       rackMap: new Map(),
@@ -413,6 +436,13 @@
             for (let c = 1; c <= cartonCount; c++) {
               totalCartonCounter++;
               const prod = SAMPLE_PRODUCTS[Math.floor(Math.random() * SAMPLE_PRODUCTS.length)];
+              const mixedRackOffset = r % 3 === 0 ? lvl + c - 2 : 0;
+              const customerIndex = (
+                RACK_CONFIG.aisles.indexOf(aisleId) * RACK_CONFIG.racksPerAisle +
+                r - 1 +
+                mixedRackOffset
+              ) % SAMPLE_CUSTOMERS.length;
+              const customer = SAMPLE_CUSTOMERS[customerIndex];
               const cartonId = `CTN-${aisleId}${rackCodeNumber}-L${lvl}-${c.toString().padStart(2, '0')}`;
               
               const w = parseFloat((0.45 + Math.random() * 0.25).toFixed(2));
@@ -427,6 +457,9 @@
                 productName: prod.name,
                 itemCode: prod.code,
                 category: prod.category,
+                customerId: customer.id,
+                customerName: customer.name,
+                customerColor: customer.color,
                 quantity: quantity,
                 size: { width: w, height: h, depth: d },
                 sizeText: `${Math.round(w*100)}x${Math.round(h*100)}x${Math.round(d*100)} cm`,
@@ -490,6 +523,48 @@
         emissive: 0xd97706
       })
     };
+    const customerMaterials = new Map(SAMPLE_CUSTOMERS.map(customer => [
+      customer.id,
+      new THREE.MeshLambertMaterial({ color: customer.color })
+    ]));
+
+    function getRackCustomerSummary(rackData) {
+      const customerCounts = new Map();
+      rackData.levels.forEach(level => {
+        level.cartons.forEach(carton => {
+          const customer = sampleCustomerMap.get(carton.customerId);
+          if (customer) {
+            const existing = customerCounts.get(customer.id);
+            customerCounts.set(customer.id, {
+              ...customer,
+              cartonCount: (existing ? existing.cartonCount : 0) + 1
+            });
+          }
+        });
+      });
+      return Array.from(customerCounts.values());
+    }
+
+    function rackHasCustomer(rackData, customerId) {
+      return !customerId || rackData.levels.some(level =>
+        level.cartons.some(carton => carton.customerId === customerId)
+      );
+    }
+
+    function buildCustomerColorLegend() {
+      const legend = document.getElementById('customer-color-legend');
+      SAMPLE_CUSTOMERS.forEach(customer => {
+        const item = document.createElement('div');
+        item.className = 'flex items-center gap-1.5 text-[10px] text-slate-600';
+        const swatch = document.createElement('span');
+        swatch.className = 'w-2.5 h-2.5 rounded-sm shrink-0';
+        swatch.style.backgroundColor = customer.color;
+        const name = document.createElement('span');
+        name.textContent = customer.name;
+        item.append(swatch, name);
+        legend.appendChild(item);
+      });
+    }
 
     function initThreeScene() {
       scene = new THREE.Scene();
@@ -773,8 +848,7 @@
 
         // Thùng Carton (1 Mesh duy nhất, không phụ kiện phức tạp)
         const boxGeo = new THREE.BoxGeometry(ctn.size.width, ctn.size.height, ctn.size.depth);
-        const styleIndex = (idx + levelData.levelNumber) % materials.cartonStyles.length;
-        const defaultMat = materials.cartonStyles[styleIndex];
+        const defaultMat = customerMaterials.get(ctn.customerId);
         
         const boxMesh = new THREE.Mesh(boxGeo, defaultMat);
         const posY = yBeam + palletH + ctn.size.height / 2;
@@ -910,6 +984,7 @@
           document.getElementById('tooltip-text').innerHTML = `
             <div class="font-bold text-amber-700"><i class="fa-solid fa-box"></i> ${ctn.id}</div>
             <div class="text-[11px] text-slate-600">${ctn.productName}</div>
+            <div class="text-[11px] text-slate-600">Khách hàng: ${ctn.customerName}</div>
           `;
         } else if (found.type === 'AISLE_LABEL') {
           const aisleRacks = warehouseData.racks.filter(rack => rack.aisle === found.aisleId);
@@ -925,9 +1000,11 @@
           `;
         } else {
           const rk = warehouseData.rackMap.get(found.rackId);
+          const customers = getRackCustomerSummary(rk).map(customer => customer.name).join(', ');
           document.getElementById('tooltip-text').innerHTML = `
             <div class="font-bold text-sky-700"><i class="fa-solid fa-server"></i> ${rk.id}</div>
             <div class="text-[11px] text-slate-600">${rk.name}</div>
+            <div class="text-[11px] text-slate-600">Khách: ${customers}</div>
           `;
         }
       } else {
@@ -1151,6 +1228,7 @@
     function buildAisleTreeUI() {
       const treeContainer = document.getElementById('aisle-tree-container');
       treeContainer.innerHTML = '';
+      buildCustomerColorLegend();
 
       RACK_CONFIG.aisles.forEach(aisleId => {
         const aisleRacks = warehouseData.racks.filter(r => r.aisle === aisleId);
@@ -1176,7 +1254,7 @@
               <span class="block mt-1 text-[10px] text-slate-500 font-mono-code">${aisleVolume.toFixed(3)} m³</span>
             </span>
           </button>
-          <div id="aisle-list-${aisleId}" class="p-2 space-y-1 hidden"></div>
+          <div id="aisle-list-${aisleId}" data-aisle-block="${aisleId}" class="p-2 space-y-1 hidden"></div>
         `;
 
         const rackListContainer = aisleBlock.querySelector(`#aisle-list-${aisleId}`);
@@ -1189,9 +1267,22 @@
               <i class="fa-solid fa-server text-slate-400 text-[10px]"></i>
               <span class="font-mono-code">${rk.id}</span>
             </div>
-            <span class="text-[10px] text-slate-500 font-mono-code">${rk.totalCartons} ctn</span>
-          `;
-          rackBtn.addEventListener('click', () => selectRack(rk.id, 0, true));
+            `;
+            const rackMeta = document.createElement('span');
+            rackMeta.className = 'flex items-center gap-1.5';
+            getRackCustomerSummary(rk).forEach(customer => {
+              const swatch = document.createElement('span');
+              swatch.className = 'w-2 h-2 rounded-full';
+              swatch.style.backgroundColor = customer.color;
+              swatch.title = `${customer.name}: ${customer.cartonCount} thùng`;
+              rackMeta.appendChild(swatch);
+            });
+            const cartonCount = document.createElement('span');
+            cartonCount.className = 'text-[10px] text-slate-500 font-mono-code';
+            cartonCount.textContent = `${rk.totalCartons} ctn`;
+            rackMeta.appendChild(cartonCount);
+            rackBtn.appendChild(rackMeta);
+            rackBtn.addEventListener('click', () => selectRack(rk.id, 0, true));
           rackListContainer.appendChild(rackBtn);
         });
 
@@ -1283,6 +1374,20 @@
       document.getElementById('detail-rack-name').textContent = rackData.name;
       document.getElementById('detail-rack-total-cartons').textContent = rackData.totalCartons;
 
+      const rackCustomerList = document.getElementById('rack-customer-list');
+      rackCustomerList.innerHTML = '';
+      getRackCustomerSummary(rackData).forEach(customer => {
+        const chip = document.createElement('span');
+        chip.className = 'inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-50 border border-slate-200 text-[11px] text-slate-700';
+        const swatch = document.createElement('span');
+        swatch.className = 'w-2.5 h-2.5 rounded-full';
+        swatch.style.backgroundColor = customer.color;
+        const label = document.createElement('span');
+        label.textContent = `${customer.name} · ${customer.cartonCount} thùng`;
+        chip.append(swatch, label);
+        rackCustomerList.appendChild(chip);
+      });
+
       const tabsContainer = document.getElementById('level-tabs-container');
       tabsContainer.innerHTML = '';
 
@@ -1330,6 +1435,10 @@
               <div>
                 <span class="font-mono-code font-bold ${isSelected ? 'text-amber-700' : 'text-sky-700'}">${ctn.id}</span>
                 <h4 class="font-medium text-slate-900 mt-0.5">${ctn.productName}</h4>
+                <span class="inline-flex items-center gap-1.5 mt-1 text-[10px] text-slate-500">
+                  <span class="w-2 h-2 rounded-full" style="background-color: ${ctn.customerColor}"></span>
+                  Khách: ${ctn.customerName}
+                </span>
               </div>
               <span class="px-2 py-0.5 rounded text-[10px] font-mono-code bg-slate-100 text-slate-700 border border-slate-300">
                 SL: <strong>${ctn.quantity}</strong>
@@ -1411,32 +1520,75 @@
 
     function setupSearch() {
       const searchInput = document.getElementById('rack-search-input');
-      searchInput.addEventListener('input', (e) => {
-        const query = e.target.value.trim().toUpperCase();
-        if (!query) {
-          document.querySelectorAll('[id^="tree-rack-btn-"]').forEach(el => el.classList.remove('hidden'));
-          return;
+      const customerFilter = document.getElementById('customer-filter');
+      SAMPLE_CUSTOMERS.forEach(customer => {
+        const option = document.createElement('option');
+        option.value = customer.id;
+        option.textContent = customer.name;
+        customerFilter.appendChild(option);
+      });
+
+      searchInput.addEventListener('input', applyRackFilters);
+      customerFilter.addEventListener('change', applyRackFilters);
+      applyRackFilters();
+    }
+
+    function applyRackFilters() {
+      const query = document.getElementById('rack-search-input').value.trim().toUpperCase();
+      const customerId = document.getElementById('customer-filter').value;
+      const matchingAisles = new Set();
+      const visibleRackIds = new Set();
+      const isFiltering = Boolean(query || customerId);
+
+      warehouseData.racks.forEach(rack => {
+        let matchesSearch = !query || rack.id.toUpperCase().includes(query) || rack.name.toUpperCase().includes(query);
+        if (!matchesSearch) {
+          matchesSearch = rack.levels.some(level => level.cartons.some(carton =>
+            carton.id.toUpperCase().includes(query) ||
+            carton.itemCode.toUpperCase().includes(query) ||
+            carton.productName.toUpperCase().includes(query) ||
+            carton.customerName.toUpperCase().includes(query)
+          ));
         }
 
-        warehouseData.racks.forEach(rk => {
-          const rackBtn = document.getElementById(`tree-rack-btn-${rk.id}`);
-          if (!rackBtn) return;
-          let match = rk.id.toUpperCase().includes(query) || rk.name.toUpperCase().includes(query);
-          if (!match) {
-            for (let lvl of rk.levels) {
-              for (let ctn of lvl.cartons) {
-                if (ctn.id.toUpperCase().includes(query) || ctn.itemCode.toUpperCase().includes(query) || ctn.productName.toUpperCase().includes(query)) {
-                  match = true;
-                  break;
-                }
-              }
-              if (match) break;
-            }
-          }
-          if (match) rackBtn.classList.remove('hidden');
-          else rackBtn.classList.add('hidden');
-        });
+        const matchesCustomer = rackHasCustomer(rack, customerId);
+        const isVisible = matchesSearch && matchesCustomer;
+        const rackButton = document.getElementById(`tree-rack-btn-${rack.id}`);
+        if (rackButton) rackButton.classList.toggle('hidden', !isVisible);
+        if (rack.threeGroup) rack.threeGroup.visible = matchesCustomer;
+        if (isVisible) {
+          matchingAisles.add(rack.aisle);
+          visibleRackIds.add(rack.id);
+        }
       });
+
+      matchingAisles.forEach(aisleId => {
+        const list = document.getElementById(`aisle-list-${aisleId}`);
+        const aisleBlock = list && list.parentElement;
+        if (aisleBlock) aisleBlock.classList.remove('hidden');
+      });
+      RACK_CONFIG.aisles.forEach(aisleId => {
+        const list = document.getElementById(`aisle-list-${aisleId}`);
+        const aisleBlock = list && list.parentElement;
+        const chevron = document.getElementById(`icon-chevron-${aisleId}`);
+        const hasMatches = matchingAisles.has(aisleId);
+        if (aisleBlock) aisleBlock.classList.toggle('hidden', !hasMatches);
+        if (list && isFiltering) list.classList.toggle('hidden', !hasMatches);
+        if (chevron && isFiltering) chevron.classList.toggle('rotate-90', hasMatches);
+      });
+
+      document.getElementById('rack-filter-result').textContent = isFiltering
+        ? `${visibleRackIds.size} rack phù hợp`
+        : '';
+
+      if (warehouseData.selectedRackId && !visibleRackIds.has(warehouseData.selectedRackId)) {
+        warehouseData.selectedRackId = null;
+        warehouseData.selectedLevelIndex = 0;
+        warehouseData.selectedCartonId = null;
+        clearHighlights();
+        updateRightPanelUI();
+        updateLeftTreeActiveState();
+      }
     }
 
     function bindControlButtons() {
