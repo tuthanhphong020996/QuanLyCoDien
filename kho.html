@@ -146,6 +146,11 @@
     <!-- 3D WebGL Canvas Container -->
     <div id="canvas-container" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></div>
 
+    <div class="absolute top-3 left-3 right-16 sm:left-[19rem] sm:right-36 z-30 flex items-start gap-2 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur-md">
+      <span class="shrink-0 pt-1 text-[10px] font-semibold text-slate-500">Khách:</span>
+      <div id="customer-color-legend" class="flex min-w-0 flex-1 flex-wrap gap-1.5 overflow-y-auto max-h-20"></div>
+    </div>
+
     <!-- FLOATING 3D VIEWPORT CONTROLS (LIGHT THEME) -->
     <div class="absolute bottom-5 left-1/2 -translate-x-1/2 max-w-[calc(100vw-1rem)] overflow-x-auto bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200/90 shadow-xl flex items-center space-x-1 z-10 text-slate-700">
       <button id="btn-zoom-in" class="p-2.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition" title="Phóng to (Zoom In)">
@@ -199,9 +204,6 @@
           <i class="fa-solid fa-search absolute left-2.5 top-2 text-[11px] text-slate-400"></i>
           <input type="text" id="rack-search-input" placeholder="Tìm Rack hoặc Mã Thùng..." class="w-full bg-white text-slate-800 text-xs rounded-lg pl-7 pr-2.5 py-1.5 border border-slate-300 focus:border-sky-500 focus:outline-none transition shadow-inner">
         </div>
-        <select id="customer-filter" class="w-full mt-2 bg-white text-slate-700 text-xs rounded-lg px-2.5 py-2 border border-slate-300 focus:border-sky-500 focus:outline-none transition">
-          <option value="">Tất cả khách hàng</option>
-        </select>
         <p id="rack-filter-result" class="text-[10px] text-slate-500 mt-1.5"></p>
       </div>
 
@@ -211,8 +213,7 @@
       </div>
 
       <div class="p-2.5 border-t border-slate-200 bg-white">
-        <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Màu thùng theo khách hàng</div>
-        <div id="customer-color-legend" class="grid grid-cols-2 gap-x-2 gap-y-1.5"></div>
+        <div class="text-[10px] text-slate-500">Chọn khách ở thanh phía trên để làm nổi bật thùng hàng tương ứng.</div>
       </div>
 
       <!-- Legend Guide -->
@@ -428,7 +429,8 @@
       selectedRackId: null,
       selectedAisleId: null,
       selectedLevelIndex: 0,
-      selectedCartonId: null
+      selectedCartonId: null,
+      selectedCustomerId: null
     };
 
     function generateMockData() {
@@ -554,6 +556,12 @@
       customer.id,
       new THREE.MeshLambertMaterial({ color: customer.color })
     ]));
+    const customerHighlightMaterials = new Map(SAMPLE_CUSTOMERS.map(customer => {
+      const material = customerMaterials.get(customer.id).clone();
+      material.emissive.set(customer.color);
+      material.emissiveIntensity = 0.65;
+      return [customer.id, material];
+    }));
 
     function getRackCustomerSummary(rackData) {
       const customerCounts = new Map();
@@ -580,16 +588,84 @@
 
     function buildCustomerColorLegend() {
       const legend = document.getElementById('customer-color-legend');
+      legend.replaceChildren();
+
+      const allCustomersButton = document.createElement('button');
+      allCustomersButton.type = 'button';
+      allCustomersButton.dataset.customerId = '';
+      allCustomersButton.dataset.customerColor = '#0284c7';
+      allCustomersButton.setAttribute('aria-pressed', 'true');
+      allCustomersButton.className = 'shrink-0 rounded-lg border px-2.5 py-1.5 text-left text-[10px] font-semibold transition';
+      allCustomersButton.textContent = 'Tất cả khách hàng';
+      allCustomersButton.addEventListener('click', () => selectCustomer(null));
+      legend.appendChild(allCustomersButton);
+
       SAMPLE_CUSTOMERS.forEach(customer => {
-        const item = document.createElement('div');
-        item.className = 'flex items-center gap-1.5 text-[10px] text-slate-600';
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.dataset.customerId = customer.id;
+        item.dataset.customerColor = customer.color;
+        item.setAttribute('aria-pressed', 'false');
+        item.className = 'flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-left text-[10px] font-medium transition';
         const swatch = document.createElement('span');
-        swatch.className = 'w-2.5 h-2.5 rounded-sm shrink-0';
+        swatch.className = 'h-3 w-3 shrink-0 rounded-sm border border-black/10';
         swatch.style.backgroundColor = customer.color;
         const name = document.createElement('span');
         name.textContent = customer.name;
         item.append(swatch, name);
+        item.addEventListener('click', () => selectCustomer(customer.id));
         legend.appendChild(item);
+      });
+    }
+
+    function selectCustomer(customerId) {
+      warehouseData.selectedCustomerId = customerId;
+      applyRackFilters();
+      applyCustomerHighlight();
+
+      document.querySelectorAll('#customer-color-legend [data-customer-id]').forEach(button => {
+        const isSelected = button.dataset.customerId === (customerId || '');
+        button.setAttribute('aria-pressed', String(isSelected));
+        button.style.backgroundColor = isSelected ? button.dataset.customerColor : '#fff';
+        button.style.borderColor = isSelected ? button.dataset.customerColor : '#cbd5e1';
+        button.style.color = isSelected ? '#fff' : '#334155';
+        const swatch = button.querySelector('span');
+        if (swatch) swatch.classList.toggle('border-white/70', isSelected);
+      });
+
+      const result = document.getElementById('rack-filter-result');
+      const customer = customerId ? sampleCustomerMap.get(customerId) : null;
+      const customerCartonCount = customerId
+        ? Array.from(warehouseData.cartonMap.values()).filter(carton => carton.customerId === customerId).length
+        : 0;
+      result.textContent = customer
+        ? `${customerCartonCount} thùng của ${customer.name} đang được highlight`
+        : (document.getElementById('rack-search-input').value.trim() ? result.textContent : '');
+    }
+
+    function applyCustomerHighlight() {
+      warehouseData.cartonMap.forEach(carton => {
+        const mesh = carton.threeMesh;
+        if (!mesh || !mesh.userData.defaultMaterial) return;
+
+        if (warehouseData.selectedCustomerId) {
+          if (!mesh.userData.customerDimmedMaterial) {
+            mesh.userData.customerDimmedMaterial = mesh.userData.defaultMaterial.clone();
+            mesh.userData.customerDimmedMaterial.transparent = true;
+            mesh.userData.customerDimmedMaterial.opacity = 0.12;
+            mesh.userData.customerDimmedMaterial.depthWrite = false;
+          }
+
+          mesh.material = carton.customerId === warehouseData.selectedCustomerId
+            ? customerHighlightMaterials.get(carton.customerId)
+            : mesh.userData.customerDimmedMaterial;
+        } else {
+          mesh.material = mesh.userData.defaultMaterial;
+        }
+
+        if (carton.id === warehouseData.selectedCartonId) {
+          mesh.material = materials.highlightCarton;
+        }
       });
     }
 
@@ -1101,18 +1177,16 @@
           ctn.threeMesh.material = ctn.threeMesh.userData.defaultMaterial;
         }
       });
+      applyCustomerHighlight();
     }
 
     function updateRackSceneVisibility() {
-      const customerFilter = document.getElementById('customer-filter');
-      const customerId = customerFilter ? customerFilter.value : '';
       warehouseData.racks.forEach(rack => {
         if (!rack.threeGroup) return;
-        const matchesCustomer = rackHasCustomer(rack, customerId);
         const isIsolatedOut = rackIsolationEnabled &&
           warehouseData.selectedRackId &&
           rack.id !== warehouseData.selectedRackId;
-        rack.threeGroup.visible = matchesCustomer && !isIsolatedOut;
+        rack.threeGroup.visible = !isIsolatedOut;
       });
 
       const isolateButton = document.getElementById('btn-isolate-rack');
@@ -1235,6 +1309,7 @@
           ctn.threeMesh.material = ctn.threeMesh.userData.defaultMaterial;
         }
       });
+      applyCustomerHighlight();
 
       if (shouldFocusCamera) {
         focusCameraOnLevel(warehouseData.selectedRackId, levelIdx);
@@ -1629,22 +1704,14 @@
 
     function setupSearch() {
       const searchInput = document.getElementById('rack-search-input');
-      const customerFilter = document.getElementById('customer-filter');
-      SAMPLE_CUSTOMERS.forEach(customer => {
-        const option = document.createElement('option');
-        option.value = customer.id;
-        option.textContent = customer.name;
-        customerFilter.appendChild(option);
-      });
-
       searchInput.addEventListener('input', applyRackFilters);
-      customerFilter.addEventListener('change', applyRackFilters);
       applyRackFilters();
+      applyCustomerHighlight();
     }
 
     function applyRackFilters() {
       const query = document.getElementById('rack-search-input').value.trim().toUpperCase();
-      const customerId = document.getElementById('customer-filter').value;
+      const customerId = warehouseData.selectedCustomerId;
       const matchingAisles = new Set();
       const visibleRackIds = new Set();
       const isFiltering = Boolean(query || customerId);
@@ -1685,8 +1752,9 @@
         if (chevron && isFiltering) chevron.classList.toggle('rotate-90', hasMatches);
       });
 
+      const customer = customerId ? sampleCustomerMap.get(customerId) : null;
       document.getElementById('rack-filter-result').textContent = isFiltering
-        ? `${visibleRackIds.size} rack phù hợp`
+        ? `${visibleRackIds.size} rack phù hợp${customer ? ` · ${customer.name}` : ''}`
         : '';
 
       if (warehouseData.selectedRackId && !visibleRackIds.has(warehouseData.selectedRackId)) {

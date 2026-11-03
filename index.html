@@ -114,7 +114,7 @@
         </button>
       </nav>
     </header>
-    <iframe id="maintenance-frame" class="app-frame" title="Quản lý cơ điện" src="quanlycodien.html"></iframe>
+    <iframe id="maintenance-frame" class="app-frame" title="Quản lý cơ điện" data-src="quanlycodien.html" hidden></iframe>
     <iframe id="warehouse-frame" class="app-frame" title="Kho" data-src="kho.html" hidden></iframe>
   </div>
   <script>
@@ -140,6 +140,8 @@
         });
       });
     });
+
+    document.querySelector('[data-app="maintenance"]').click();
   </script>
 </body>
 </html>
