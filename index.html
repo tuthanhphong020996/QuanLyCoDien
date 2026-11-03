@@ -124,7 +124,7 @@
     <div id="canvas-container" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"></div>
 
     <!-- FLOATING 3D VIEWPORT CONTROLS (LIGHT THEME) -->
-    <div class="absolute bottom-5 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200/90 shadow-xl flex items-center space-x-1 z-10 text-slate-700">
+    <div class="absolute bottom-5 left-1/2 -translate-x-1/2 max-w-[calc(100vw-1rem)] overflow-x-auto bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200/90 shadow-xl flex items-center space-x-1 z-10 text-slate-700">
       <button id="btn-zoom-in" class="p-2.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition" title="Phóng to (Zoom In)">
         <i class="fa-solid fa-magnifying-glass-plus"></i>
       </button>
@@ -145,6 +145,9 @@
       <div class="h-5 w-px bg-slate-200 mx-1"></div>
       <button id="btn-toggle-labels" class="px-3 py-1.5 rounded-lg text-xs font-medium text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-100 transition flex items-center gap-1.5" title="Bật/Tắt hiển thị số thứ tự 3D">
         <i class="fa-solid fa-tags text-sky-600"></i> Nhãn 3D
+      </button>
+      <button id="btn-isolate-rack" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 bg-slate-100 border border-slate-200 transition flex items-center gap-1.5 opacity-60 cursor-not-allowed" title="Chọn một rack để xem riêng" disabled>
+        <i class="fa-solid fa-eye-slash"></i> Xem riêng rack
       </button>
     </div>
 
@@ -491,6 +494,7 @@
     let animationFrameId = null;
     let labelsGroup = null; // Quản lý toàn bộ nhãn số 3D
     let labelsVisible = true;
+    let rackIsolationEnabled = false;
 
     const cameraTargetAnim = {
       isAnimating: false,
@@ -1076,6 +1080,36 @@
       });
     }
 
+    function updateRackSceneVisibility() {
+      const customerFilter = document.getElementById('customer-filter');
+      const customerId = customerFilter ? customerFilter.value : '';
+      warehouseData.racks.forEach(rack => {
+        if (!rack.threeGroup) return;
+        const matchesCustomer = rackHasCustomer(rack, customerId);
+        const isIsolatedOut = rackIsolationEnabled &&
+          warehouseData.selectedRackId &&
+          rack.id !== warehouseData.selectedRackId;
+        rack.threeGroup.visible = matchesCustomer && !isIsolatedOut;
+      });
+
+      const isolateButton = document.getElementById('btn-isolate-rack');
+      if (isolateButton) {
+        const hasSelection = Boolean(warehouseData.selectedRackId);
+        isolateButton.disabled = !hasSelection;
+        isolateButton.className = rackIsolationEnabled
+          ? 'px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-sky-600 border border-sky-700 hover:bg-sky-700 transition flex items-center gap-1.5'
+          : 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 transition flex items-center gap-1.5';
+        isolateButton.classList.toggle('opacity-60', !hasSelection);
+        isolateButton.classList.toggle('cursor-not-allowed', !hasSelection);
+        isolateButton.title = hasSelection
+          ? (rackIsolationEnabled ? 'Hiện lại tất cả rack' : 'Ẩn rack khác để xem rõ rack đang chọn')
+          : 'Chọn một rack để xem riêng';
+        isolateButton.innerHTML = rackIsolationEnabled
+          ? '<i class="fa-solid fa-eye"></i> Hiện toàn bộ'
+          : '<i class="fa-solid fa-eye-slash"></i> Xem riêng rack';
+      }
+    }
+
     function selectRack(rackId, levelIdx = 0, shouldFocusCamera = false, openPanel = true) {
       const rackData = warehouseData.rackMap.get(rackId);
       if (!rackData) return;
@@ -1096,6 +1130,7 @@
           }
         });
       }
+      updateRackSceneVisibility();
 
       if (shouldFocusCamera) focusCameraOnRack(rackData);
 
@@ -1112,7 +1147,9 @@
       warehouseData.selectedRackId = null;
       warehouseData.selectedLevelIndex = 0;
       warehouseData.selectedCartonId = null;
+      rackIsolationEnabled = false;
       clearHighlights();
+      updateRackSceneVisibility();
       if (openPanel) {
         document.getElementById('right-panel').classList.remove('translate-x-[120%]');
       }
@@ -1158,6 +1195,7 @@
           }
         });
       }
+      updateRackSceneVisibility();
 
       if (cartonData.threeMesh) {
         cartonData.threeMesh.material = materials.highlightCarton;
@@ -1555,7 +1593,6 @@
         const isVisible = matchesSearch && matchesCustomer;
         const rackButton = document.getElementById(`tree-rack-btn-${rack.id}`);
         if (rackButton) rackButton.classList.toggle('hidden', !isVisible);
-        if (rack.threeGroup) rack.threeGroup.visible = matchesCustomer;
         if (isVisible) {
           matchingAisles.add(rack.aisle);
           visibleRackIds.add(rack.id);
@@ -1583,12 +1620,15 @@
 
       if (warehouseData.selectedRackId && !visibleRackIds.has(warehouseData.selectedRackId)) {
         warehouseData.selectedRackId = null;
+        warehouseData.selectedAisleId = null;
         warehouseData.selectedLevelIndex = 0;
         warehouseData.selectedCartonId = null;
+        rackIsolationEnabled = false;
         clearHighlights();
         updateRightPanelUI();
         updateLeftTreeActiveState();
       }
+      updateRackSceneVisibility();
     }
 
     function bindControlButtons() {
@@ -1607,6 +1647,11 @@
       document.getElementById('btn-reset-cam').addEventListener('click', resetCameraDefault);
       document.getElementById('btn-fit-view').addEventListener('click', fitWarehouseView);
       document.getElementById('btn-top-view').addEventListener('click', setTopDownView);
+      document.getElementById('btn-isolate-rack').addEventListener('click', () => {
+        if (!warehouseData.selectedRackId) return;
+        rackIsolationEnabled = !rackIsolationEnabled;
+        updateRackSceneVisibility();
+      });
 
       // Nút Bật/Tắt hiển thị nhãn số 3D
       const btnToggleLabels = document.getElementById('btn-toggle-labels');
@@ -1647,7 +1692,9 @@
         warehouseData.selectedAisleId = null;
         warehouseData.selectedLevelIndex = 0;
         warehouseData.selectedCartonId = null;
+        rackIsolationEnabled = false;
         clearHighlights();
+        updateRackSceneVisibility();
         updateRightPanelUI();
         updateLeftTreeActiveState();
       });
