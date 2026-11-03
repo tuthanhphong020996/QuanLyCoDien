@@ -148,7 +148,7 @@
 
     <div class="absolute top-3 left-3 right-16 sm:left-[19rem] sm:right-36 z-30 flex items-start gap-2 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur-md">
       <span class="shrink-0 pt-1 text-[10px] font-semibold text-slate-500">Khách:</span>
-      <div id="customer-color-legend" class="flex min-w-0 flex-1 flex-wrap gap-1.5 overflow-y-auto max-h-20"></div>
+      <div id="customer-color-legend" class="flex min-w-0 flex-1 flex-nowrap gap-1.5 overflow-x-auto overflow-y-hidden"></div>
     </div>
 
     <!-- FLOATING 3D VIEWPORT CONTROLS (LIGHT THEME) -->
@@ -225,15 +225,15 @@
     </aside>
 
     <!-- Nút mở nhanh thanh Sơ đồ kệ bên trái -->
-    <button id="btn-expand-left" class="absolute top-3 left-3 z-10 px-3 py-2 bg-white/95 hover:bg-slate-50 text-sky-700 border border-slate-300 rounded-xl shadow-md backdrop-blur-md text-xs font-semibold flex items-center gap-2 transition active:scale-95">
+    <button id="btn-expand-left" class="absolute top-16 sm:top-3 left-3 z-10 px-3 py-2 bg-white/95 hover:bg-slate-50 text-sky-700 border border-slate-300 rounded-xl shadow-md backdrop-blur-md text-xs font-semibold flex items-center gap-2 transition active:scale-95">
       <i class="fa-solid fa-bars text-sky-600"></i>
-      <span class="hidden sm:inline">Sơ đồ Kệ</span>
+      <span>Sơ đồ Kệ</span>
     </button>
 
     <!-- Nút mở nhanh thanh Chi tiết bên phải (Floating Action Button) -->
-    <button id="btn-open-detail" class="absolute top-3 right-3 z-10 px-3 py-2 bg-white/95 hover:bg-slate-50 text-sky-700 border border-slate-300 rounded-xl shadow-md backdrop-blur-md text-xs font-semibold flex items-center gap-2 transition active:scale-95">
+    <button id="btn-open-detail" class="absolute top-16 sm:top-3 right-3 z-10 px-3 py-2 bg-white/95 hover:bg-slate-50 text-sky-700 border border-slate-300 rounded-xl shadow-md backdrop-blur-md text-xs font-semibold flex items-center gap-2 transition active:scale-95">
       <i class="fa-solid fa-clipboard-check text-sky-600"></i>
-      <span class="hidden sm:inline">Chi tiết Rack</span>
+      <span>Chi tiết Rack</span>
     </button>
 
     <!-- ================= RIGHT PANEL: DETAILED INSPECTION (MẶC ĐỊNH ẨN & RESPONSIVE) ================= -->
