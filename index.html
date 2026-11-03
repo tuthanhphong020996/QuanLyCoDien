@@ -723,7 +723,12 @@
         scaleY: 0.52
       });
       rackBadge.position.set(0, h + 0.35, 0);
-      rackBadge.userData = { type: 'RACK_LABEL', rackId: rackData.id };
+      rackBadge.userData = {
+        type: 'RACK_LABEL',
+        rackId: rackData.id,
+        defaultColor: rackBadge.material.color.getHex(),
+        defaultScale: rackBadge.scale.clone()
+      };
       rackGroup.add(rackBadge);
 
       // Gắn nhãn số tầng (T1, T2, T3) bên mép ngoài cột trụ
@@ -980,6 +985,9 @@
             child.material = child.geometry.attributes.position.count > 100 
               ? materials.steelBlue 
               : materials.beamOrange;
+          } else if (child.userData.type === 'RACK_LABEL') {
+            child.material.color.setHex(child.userData.defaultColor);
+            child.scale.copy(child.userData.defaultScale);
           }
         });
       });
@@ -1005,6 +1013,9 @@
         rackData.threeGroup.children.forEach(child => {
           if (child.isMesh && child.userData.type === 'RACK_FRAME') {
             child.material = materials.highlightRack;
+          } else if (child.userData.type === 'RACK_LABEL') {
+            child.material.color.setHex(0x38bdf8);
+            child.scale.copy(child.userData.defaultScale).multiplyScalar(1.15);
           }
         });
       }
@@ -1064,6 +1075,9 @@
         rack.threeGroup.children.forEach(child => {
           if (child.isMesh && child.userData.type === 'RACK_FRAME') {
             child.material = materials.highlightRack;
+          } else if (child.userData.type === 'RACK_LABEL') {
+            child.material.color.setHex(0x38bdf8);
+            child.scale.copy(child.userData.defaultScale).multiplyScalar(1.15);
           }
         });
       }
