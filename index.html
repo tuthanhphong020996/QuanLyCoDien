@@ -221,13 +221,39 @@
           <i class="fa-solid fa-hand-pointer text-4xl mb-3 text-slate-300 animate-bounce"></i>
           <p class="font-medium text-slate-700 text-sm">Chưa có đối tượng nào được chọn</p>
           <p class="text-xs mt-1 text-slate-500 leading-relaxed">
-            Nhấp chuột vào bất kỳ <strong class="text-sky-600">Kệ hàng</strong> hoặc <strong class="text-amber-600">Thùng Carton</strong> trên mô hình 3D hoặc từ danh sách bên trái để kiểm tra chi tiết.
+            Chọn một <strong class="text-sky-600">dãy kệ</strong> để xem tổng quan, hoặc chọn nhãn số rack/tầng hay thùng carton để xem chi tiết.
           </p>
         </div>
 
         <!-- Populated Details View -->
         <div id="active-detail-content" class="hidden space-y-4">
 
+          <div id="aisle-detail-content" class="hidden space-y-4">
+            <div class="p-3.5 rounded-xl bg-sky-50 border border-sky-200 shadow-sm">
+              <span class="text-[10px] font-bold text-sky-600 uppercase tracking-wider">Tổng quan dãy kệ</span>
+              <h2 id="detail-aisle-title" class="text-lg font-bold text-slate-900">Dãy kệ A</h2>
+              <div class="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-sky-200 text-center">
+                <div>
+                  <span class="text-[10px] text-slate-500 block">Tổng thể tích</span>
+                  <strong id="detail-aisle-volume" class="text-sm text-sky-700 font-mono-code">0 m³</strong>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-500 block">Tổng thùng</span>
+                  <strong id="detail-aisle-cartons" class="text-sm text-slate-800 font-mono-code">0</strong>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-500 block">Tổng sản phẩm</span>
+                  <strong id="detail-aisle-units" class="text-sm text-slate-800 font-mono-code">0</strong>
+                </div>
+              </div>
+            </div>
+            <div class="p-3.5 rounded-xl bg-white border border-slate-200">
+              <h3 class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Thể tích theo sản phẩm</h3>
+              <div id="aisle-product-list" class="space-y-2"></div>
+            </div>
+          </div>
+
+          <div id="rack-detail-content" class="space-y-4">
           <!-- Rack Header Card -->
           <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 shadow-sm">
             <div class="flex items-start justify-between">
@@ -279,6 +305,7 @@
             </div>
           </div>
 
+          </div>
         </div>
 
       </div>
@@ -350,6 +377,7 @@
       rackMap: new Map(),
       cartonMap: new Map(),
       selectedRackId: null,
+      selectedAisleId: null,
       selectedLevelIndex: 0,
       selectedCartonId: null
     };
@@ -510,7 +538,6 @@
       window.addEventListener('resize', onWindowResize);
       container.addEventListener('pointermove', onPointerMove, { passive: true });
       container.addEventListener('pointerdown', onPointerDown, { passive: true });
-      container.addEventListener('pointerup', onPointerUp, { passive: true });
       container.addEventListener('touchend', onTouchEndIOS, { passive: false });
       container.addEventListener('click', onClickScene);
     }
@@ -803,6 +830,7 @@
           scaleY: 1.0
         });
         aisleSign.position.set(posX, 5.8, frontZ);
+        aisleSign.userData = { type: 'AISLE_LABEL', aisleId };
         labelsGroup.add(aisleSign);
 
         // Biển tương tự ở cuối dãy
@@ -816,6 +844,7 @@
           scaleY: 1.0
         });
         aisleSignBack.position.set(posX, 5.8, backZ);
+        aisleSignBack.userData = { type: 'AISLE_LABEL', aisleId };
         labelsGroup.add(aisleSignBack);
       });
 
@@ -832,14 +861,6 @@
       pointerDownPos.x = event.clientX;
       pointerDownPos.y = event.clientY;
       pointerDownPos.time = Date.now();
-    }
-
-    function onPointerUp(event) {
-      const diffX = Math.abs(event.clientX - pointerDownPos.x);
-      const diffY = Math.abs(event.clientY - pointerDownPos.y);
-      if (diffX <= 8 && diffY <= 8 && Date.now() - pointerDownPos.time < 400) {
-        handleRaycastSelection(event.clientX, event.clientY);
-      }
     }
 
     function onTouchEndIOS(event) {
@@ -869,20 +890,33 @@
 
       let found = null;
       for (let hit of intersects) {
-        if (hit.object.userData && (hit.object.userData.type === 'CARTON' || hit.object.userData.type === 'RACK_FRAME')) {
+        if (hit.object.userData && ['CARTON', 'RACK_LABEL', 'LEVEL_LABEL', 'AISLE_LABEL'].includes(hit.object.userData.type)) {
           found = hit.object.userData;
           break;
         }
+        if (hit.object.userData && hit.object.userData.type === 'RACK_FRAME') break;
       }
 
       if (found) {
-        document.body.style.cursor = 'pointer';
+        renderer.domElement.style.cursor = 'pointer';
         tooltip.classList.remove('hidden');
         if (found.type === 'CARTON') {
           const ctn = warehouseData.cartonMap.get(found.cartonId);
           document.getElementById('tooltip-text').innerHTML = `
             <div class="font-bold text-amber-700"><i class="fa-solid fa-box"></i> ${ctn.id}</div>
             <div class="text-[11px] text-slate-600">${ctn.productName}</div>
+          `;
+        } else if (found.type === 'AISLE_LABEL') {
+          const aisleRacks = warehouseData.racks.filter(rack => rack.aisle === found.aisleId);
+          const cartonCount = aisleRacks.reduce((total, rack) => total + rack.totalCartons, 0);
+          document.getElementById('tooltip-text').innerHTML = `
+            <div class="font-bold text-sky-700"><i class="fa-solid fa-server"></i> Dãy kệ ${found.aisleId}</div>
+            <div class="text-[11px] text-slate-600">${aisleRacks.length} rack · ${cartonCount} thùng</div>
+          `;
+        } else if (found.type === 'LEVEL_LABEL') {
+          document.getElementById('tooltip-text').innerHTML = `
+            <div class="font-bold text-sky-700"><i class="fa-solid fa-layer-group"></i> ${found.rackId}</div>
+            <div class="text-[11px] text-slate-600">Tầng ${found.levelNumber}</div>
           `;
         } else {
           const rk = warehouseData.rackMap.get(found.rackId);
@@ -892,7 +926,7 @@
           `;
         }
       } else {
-        document.body.style.cursor = 'default';
+        renderer.domElement.style.cursor = '';
         tooltip.classList.add('hidden');
       }
     }
@@ -920,8 +954,16 @@
         if (u && u.type === 'CARTON') {
           selectCarton(u.cartonId, true);
           return;
-        } else if (u && u.type === 'RACK_FRAME') {
+        } else if (u && u.type === 'RACK_LABEL') {
           selectRack(u.rackId, 0, false, true);
+          return;
+        } else if (u && u.type === 'LEVEL_LABEL') {
+          selectRack(u.rackId, u.levelNumber - 1, false, true);
+          return;
+        } else if (u && u.type === 'AISLE_LABEL') {
+          selectAisle(u.aisleId);
+          return;
+        } else if (u && u.type === 'RACK_FRAME') {
           return;
         }
       }
@@ -954,6 +996,7 @@
       if (!rackData) return;
 
       warehouseData.selectedRackId = rackId;
+      warehouseData.selectedAisleId = null;
       warehouseData.selectedLevelIndex = levelIdx;
       warehouseData.selectedCartonId = null;
 
@@ -971,6 +1014,19 @@
       if (openPanel) {
         const rightPanel = document.getElementById('right-panel');
         rightPanel.classList.remove('translate-x-[120%]');
+      }
+      updateRightPanelUI();
+      updateLeftTreeActiveState();
+    }
+
+    function selectAisle(aisleId, openPanel = true) {
+      warehouseData.selectedAisleId = aisleId;
+      warehouseData.selectedRackId = null;
+      warehouseData.selectedLevelIndex = 0;
+      warehouseData.selectedCartonId = null;
+      clearHighlights();
+      if (openPanel) {
+        document.getElementById('right-panel').classList.remove('translate-x-[120%]');
       }
       updateRightPanelUI();
       updateLeftTreeActiveState();
@@ -997,6 +1053,7 @@
       if (!cartonData) return;
 
       warehouseData.selectedRackId = cartonData.rackId;
+      warehouseData.selectedAisleId = null;
       warehouseData.selectedLevelIndex = cartonData.levelNumber - 1;
       warehouseData.selectedCartonId = cartonId;
 
@@ -1087,14 +1144,22 @@
 
         const aisleBlock = document.createElement('div');
         aisleBlock.className = 'bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-sm';
+        const aisleVolume = aisleRacks.reduce((total, rack) => total + rack.levels.reduce(
+          (rackTotal, level) => rackTotal + level.cartons.reduce(
+            (levelTotal, carton) => levelTotal + carton.size.width * carton.size.height * carton.size.depth,
+            0
+          ),
+          0
+        ), 0);
         aisleBlock.innerHTML = `
           <button class="w-full px-3 py-2.5 bg-slate-100 hover:bg-slate-200/80 flex items-center justify-between transition text-left" data-aisle-btn="${aisleId}">
             <div class="flex items-center gap-2">
               <i class="fa-solid fa-chevron-right text-xs text-slate-500 transition-transform duration-200" id="icon-chevron-${aisleId}"></i>
               <span class="font-bold text-xs text-slate-800">DÃY KỆ ${aisleId}</span>
             </div>
-            <span class="text-[10px] font-mono-code bg-sky-100 text-sky-700 px-2 py-0.5 rounded border border-sky-300">
-              ${totalCartonsInAisle} Thùng
+            <span class="text-right">
+              <span class="block text-[10px] font-mono-code bg-sky-100 text-sky-700 px-2 py-0.5 rounded border border-sky-300">${totalCartonsInAisle} Thùng</span>
+              <span class="block mt-1 text-[10px] text-slate-500 font-mono-code">${aisleVolume.toFixed(3)} m³</span>
             </span>
           </button>
           <div id="aisle-list-${aisleId}" class="p-2 space-y-1 hidden"></div>
@@ -1118,6 +1183,7 @@
 
         const toggleBtn = aisleBlock.querySelector(`[data-aisle-btn="${aisleId}"]`);
         toggleBtn.addEventListener('click', () => {
+          selectAisle(aisleId);
           const list = document.getElementById(`aisle-list-${aisleId}`);
           const chevron = document.getElementById(`icon-chevron-${aisleId}`);
           const isClosed = list.classList.contains('hidden');
@@ -1143,6 +1209,14 @@
       document.querySelectorAll('[id^="tree-rack-btn-"]').forEach(btn => {
         btn.classList.remove('bg-sky-100', 'text-sky-700', 'font-semibold', 'border', 'border-sky-300');
       });
+      document.querySelectorAll('[data-aisle-btn]').forEach(btn => {
+        btn.classList.remove('bg-sky-100', 'text-sky-700');
+      });
+
+      if (warehouseData.selectedAisleId) {
+        const aisleButton = document.querySelector(`[data-aisle-btn="${warehouseData.selectedAisleId}"]`);
+        if (aisleButton) aisleButton.classList.add('bg-sky-100', 'text-sky-700');
+      }
 
       if (warehouseData.selectedRackId) {
         const activeBtn = document.getElementById(`tree-rack-btn-${warehouseData.selectedRackId}`);
@@ -1162,15 +1236,31 @@
     function updateRightPanelUI() {
       const emptyMsg = document.getElementById('empty-selection-msg');
       const content = document.getElementById('active-detail-content');
+      const aisleContent = document.getElementById('aisle-detail-content');
+      const rackContent = document.getElementById('rack-detail-content');
+      const focusRackButton = document.getElementById('btn-focus-rack');
 
-      if (!warehouseData.selectedRackId) {
+      if (!warehouseData.selectedRackId && !warehouseData.selectedAisleId) {
         emptyMsg.classList.remove('hidden');
         content.classList.add('hidden');
+        focusRackButton.classList.remove('hidden');
         return;
       }
 
       emptyMsg.classList.add('hidden');
       content.classList.remove('hidden');
+
+      if (warehouseData.selectedAisleId) {
+        aisleContent.classList.remove('hidden');
+        rackContent.classList.add('hidden');
+        focusRackButton.classList.add('hidden');
+        updateAisleSummaryUI(warehouseData.selectedAisleId);
+        return;
+      }
+
+      aisleContent.classList.add('hidden');
+      rackContent.classList.remove('hidden');
+      focusRackButton.classList.remove('hidden');
 
       const rackData = warehouseData.rackMap.get(warehouseData.selectedRackId);
       if (!rackData) return;
@@ -1241,6 +1331,68 @@
           cartonListContainer.appendChild(card);
         });
       }
+    }
+
+    function updateAisleSummaryUI(aisleId) {
+      const aisleRacks = warehouseData.racks.filter(rack => rack.aisle === aisleId);
+      const products = new Map();
+      let totalCartons = 0;
+      let totalUnits = 0;
+      let totalVolume = 0;
+
+      aisleRacks.forEach(rack => {
+        rack.levels.forEach(level => {
+          level.cartons.forEach(carton => {
+            const volume = carton.size.width * carton.size.height * carton.size.depth;
+            let product = products.get(carton.itemCode);
+            if (!product) {
+              product = {
+                name: carton.productName,
+                itemCode: carton.itemCode,
+                cartons: 0,
+                quantity: 0,
+                volume: 0
+              };
+              products.set(carton.itemCode, product);
+            }
+            product.cartons += 1;
+            product.quantity += carton.quantity;
+            product.volume += volume;
+            totalCartons += 1;
+            totalUnits += carton.quantity;
+            totalVolume += volume;
+          });
+        });
+      });
+
+      document.getElementById('detail-aisle-title').textContent = `Dãy kệ ${aisleId}`;
+      document.getElementById('detail-aisle-volume').textContent = `${totalVolume.toFixed(3)} m³`;
+      document.getElementById('detail-aisle-cartons').textContent = totalCartons.toLocaleString('vi-VN');
+      document.getElementById('detail-aisle-units').textContent = totalUnits.toLocaleString('vi-VN');
+
+      const productList = document.getElementById('aisle-product-list');
+      productList.innerHTML = '';
+      Array.from(products.values())
+        .sort((a, b) => b.volume - a.volume)
+        .forEach(product => {
+          const row = document.createElement('div');
+          row.className = 'flex items-start justify-between gap-3 p-2 rounded-lg bg-slate-50 border border-slate-100';
+          const name = document.createElement('div');
+          name.className = 'min-w-0';
+          const productName = document.createElement('div');
+          productName.className = 'text-xs font-medium text-slate-800';
+          productName.textContent = product.name;
+          const productMeta = document.createElement('div');
+          productMeta.className = 'text-[10px] text-slate-500 font-mono-code mt-0.5';
+          productMeta.textContent = `${product.itemCode} · ${product.cartons} thùng · SL ${product.quantity.toLocaleString('vi-VN')}`;
+          name.append(productName, productMeta);
+
+          const volume = document.createElement('strong');
+          volume.className = 'shrink-0 text-xs text-sky-700 font-mono-code';
+          volume.textContent = `${product.volume.toFixed(3)} m³`;
+          row.append(name, volume);
+          productList.appendChild(row);
+        });
     }
 
     function setupSearch() {
@@ -1326,6 +1478,7 @@
 
       document.getElementById('btn-clear-selection').addEventListener('click', () => {
         warehouseData.selectedRackId = null;
+        warehouseData.selectedAisleId = null;
         warehouseData.selectedLevelIndex = 0;
         warehouseData.selectedCartonId = null;
         clearHighlights();
