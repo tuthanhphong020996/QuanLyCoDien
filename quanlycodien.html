@@ -62,21 +62,21 @@
             <div class="grid grid-cols-3 gap-1 p-0.5 bg-slate-100/80 rounded-lg border border-slate-200/70 w-full">
                 <!-- CỘT 1: Kế Hoạch -->
                 <button id="nav-btn-tasks" onclick="switchTab(1)"
-                        class="p-1.5 rounded-lg font-extrabold text-sm transition-all flex items-center justify-center gap-2 bg-brand-500 text-white shadow-xs">
+                        class="p-1 rounded-lg font-extrabold text-sm transition-all flex items-center justify-center gap-2 bg-brand-500 text-white shadow-xs">
                     <span class="truncate">Kế Hoạch</span>
                     <span id="plan-badge-count" class="px-1.5 py-0.2 rounded-full font-bold bg-blue-700/80 text-white shrink-0 text-xs">8</span>
                 </button>
 
                 <!-- CỘT 2: Thiết Bị -->
                 <button id="nav-btn-equipments" onclick="switchTab(2)"
-                        class="p-1.5 rounded-lg font-extrabold text-sm transition-all flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900">
+                        class="p-1 rounded-lg font-extrabold text-sm transition-all flex items-center justify-center gap-2 text-slate-600 hover:text-slate-900">
                     <span class="truncate">Thiết Bị</span>
                     <span id="eq-badge-count" class="px-1.5 py-0.2 rounded-full bg-slate-200/80 text-slate-700 shrink-0 text-xs">6</span>
                 </button>
 
                 <!-- CỘT 3: Báo Cáo Ca Trực -->
                 <button id="nav-btn-reports" onclick="switchTab(4)"
-                        class="group relative flex items-center justify-center gap-1 p-1.5 rounded-md font-medium text-amber-700 hover:text-amber-800 hover:bg-amber-100/60 border border-transparent hover:border-amber-200 transition-all text-sm w-full">
+                        class="group relative flex items-center justify-center gap-1 p-1 rounded-md font-medium text-amber-700 hover:text-amber-800 hover:bg-amber-100/60 border border-transparent hover:border-amber-200 transition-all text-sm w-full">
                     <span class="truncate font-bold">Báo Cáo</span>
                     <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
                 </button>
@@ -192,27 +192,37 @@
 
         <!-- TAB 2: QUẢN LÝ THIẾT BỊ -->
         <div id="tab-2-content" class="hidden flex-1 min-h-0 flex flex-col space-y-2">
-            <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-1.5">
-                <div class="flex flex-wrap items-center gap-1.5 sm:w-auto text-xs">
-                    <input type="text" id="eq2-filter-search" oninput="renderEquipmentTab()" placeholder="Tìm tên máy, mã, vị trí..." class="px-2 py-1 border border-slate-300 rounded bg-slate-50 w-full sm:w-48 focus:outline-none">
-                     <button onclick="scanBarcode()" class="bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-bold text-sm rounded-xl shadow-xs flex items-center gap-2">
+            <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs items-center gap-1.5">
+                <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                    <input type="text" id="eq2-filter-search"
+                        oninput="renderEquipmentTab()"
+                        placeholder="Tìm tên máy, mã, vị trí..."
+                        class="px-2 py-1 border border-slate-300 rounded bg-slate-50 focus:outline-none flex-1" />
+
+                    <button onclick="scanBarcode()"
+                            class="bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-bold text-sm rounded-lg shadow-xs flex items-center gap-2 px-2">
                         <i class="fa-solid fa-qrcode text-base"></i>
                         <span>Quét QR</span>
                     </button>
-                    <select id="eq2-filter-comp" onchange="renderEquipmentTab()" class="border border-slate-300 rounded px-2 py-1 bg-slate-50 focus:outline-none">
-                        <option value="ALL">Mọi phân xưởng</option>
+
+                    <select id="eq2-filter-comp"
+                            onchange="renderEquipmentTab()"
+                            class="border border-slate-300 rounded px-2 py-1 bg-slate-50 focus:outline-none">
+                        <option value="ALL">Phân xưởng</option>
                         <option value="Gỗ 1">Gỗ 1</option>
                         <option value="Gỗ 2">Gỗ 2</option>
                         <option value="Sắt">Sắt</option>
                         <option value="Nệm">Nệm</option>
                     </select>
                 </div>
-
-                <button onclick="openDeviceModal()" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-900 text-white font-semibold flex items-center gap-1 shadow-2xs text-xs transition ml-auto">
-                    <span>+</span> <span>Thêm Thiết Bị</span>
+            </div>
+            <div>
+                <button onclick="openDeviceModal()"
+                        class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-900 text-white font-semibold flex items-center gap-1 shadow-2xs text-xs transition ml-auto">
+                    <span>+</span>
+                    <span>Thêm Thiết Bị</span>
                 </button>
             </div>
-
             <div class="flex-1 overflow-auto space-y-2">
                 <div id="equipment-mobile-list" class="space-y-2 md:hidden"></div>
                 <div class="hidden md:block bg-white rounded-lg border border-slate-200 shadow-2xs overflow-hidden">
